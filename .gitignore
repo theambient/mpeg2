@@ -1,0 +1,10 @@
+.DS_Store
+.dub
+docs.json
+__dummy.html
+*.o
+*.obj
+cdist
+dub.selections.json
+project.sublime-workspace
+mpeg2
