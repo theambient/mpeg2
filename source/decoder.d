@@ -6,6 +6,8 @@ import std.string;
 import std.exception;
 import stdint;
 import bitstream;
+import vlc;
+import macroblock;
 
 class Plane
 {
@@ -50,10 +52,25 @@ class Frame
 			planes[i] = new Plane(width, height);
 		}
 	}
+
+	void process(MacroBlock mb)
+	{
+
+	}
+}
+
+enum PictureStructure
+{
+	Reserved    = 0,
+	TopField    = 1,
+	BottomField = 2,
+	Frame       = 3,
 }
 
 struct PictureHeader
 {
+	SequenceInfo si;
+
 	uint temporal_reference;
 	ubyte picture_coding_type;
 	uint vbv_delay;
@@ -78,6 +95,11 @@ struct PictureHeader
 	bool sub_carrier;
 	ubyte burst_amplitude;
 	ubyte sub_carrier_phase;
+
+	this(SequenceInfo si)
+	{
+		this.si = si;
+	}
 
 	void parse(BitstreamReader bs)
 	{
@@ -176,9 +198,9 @@ enum Level
 
 enum ChromaFormat
 {
-	C420,
-	C422,
-	C444,
+	C420 = 1,
+	C422 = 2,
+	C444 = 3,
 }
 
 Profile parse_profile(ubyte profile)
@@ -292,6 +314,54 @@ struct SequenceInfo
 		writefln("low_delay:   %s", low_delay);
 		writefln("chroma_format:   %s", chroma_format);
 	}
+}
+
+class Slice
+{
+	this(PictureHeader ph)
+	{
+		this.ph = ph;
+	}
+
+	void parse(BitstreamReader bs, uint start_code)
+	{
+		slice_vert_pos = start_code - 1;
+
+		if(ph.si.height > 2800)
+		{
+			slice_vert_pos = bs.read_u(3) << slice_vert_pos;
+		}
+
+		//TODO: implement priority_breakpoint
+
+		quantiser_scale_code = bs.read_u(5);
+
+		if(bs.peek_u1)
+		{
+			slice_extension_flag = bs.read_bool;
+			intra_slice = bs.read_bool;
+			slice_picture_id_enable = bs.read_bool;
+			slice_picture_id = bs.read_b(6);
+
+			while(bs.peek_u1)
+			{
+				bs.read_u1;
+				bs.skip_u(8);
+			}
+		}
+
+		bs.skip_u1;
+
+	}
+
+	PictureHeader ph;
+	int slice_vert_pos;
+	int quantiser_scale_code;
+	bool slice_extension_flag;
+	bool intra_slice;
+	bool slice_picture_id_enable;
+	ubyte slice_picture_id;
+
 }
 
 struct GopInfo
@@ -460,7 +530,15 @@ class Decoder
 
 	private void _parse_slice(ubyte start_code)
 	{
+		auto s = new Slice(ph);
 
+		s.parse(bs, start_code);
+
+		do {
+			auto mb = MacroBlock(s);
+			mb.parse(bs);
+			frame.process(mb);
+		} while( bs.nextbits(23) != 0);
 	}
 
 	private void _parse_picture_header(ubyte start_code)
@@ -513,7 +591,7 @@ class Decoder
 	private PictureHeader ph;
 	private ExpectedExtension expected_extension;
 	private int extension_i = 1;
-
+	private Frame frame;
 }
 
 enum ExpectedExtension

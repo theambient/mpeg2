@@ -4,6 +4,7 @@ module bitstream;
 public import stdint;
 
 import std.exception;
+import std.algorithm;
 
 /**
 * @brief Bitstream reader and parser
@@ -51,6 +52,42 @@ public class BitstreamReader
 		return cast(bool) read_u1;
 	}
 
+	public uint nextbits(int n) const
+	{
+		static immutable int[] mask = [
+			~0xFF,
+			~0x7F,
+			~0x3F,
+			~0x1F,
+			~0x0F,
+			~0x07,
+			~0x03,
+			~0x01,
+			~0x00,
+		];
+
+		uint r = 0;
+		int i = 0;
+		int bits_to_put = min(min(n, 8), bits_left);
+		int bits_left_shift = 8 - bits_left;
+
+		while(n > 0)
+		{
+			r <<= bits_to_put;
+
+			ubyte b = cast(ubyte) (p[i] << bits_left_shift);
+			int tail = ( b & mask[bits_to_put]) >> (8 - bits_to_put);
+			r |= tail;
+
+			n -= bits_to_put;
+			i+= 1;
+			bits_to_put = min(n, 8);
+			bits_left_shift = 0;
+		}
+
+		return r;
+	}
+
 	public ubyte read_u1()
 	{
 		ubyte r = 0;
@@ -92,7 +129,7 @@ public class BitstreamReader
 	}
 
 
-	public uint32 read_u(int n)
+	public T read_u(T = uint32)(int n)
 	{
 		uint32 r = 0;
 		int i;
@@ -100,7 +137,7 @@ public class BitstreamReader
 		{
 			r |= ( read_u1() << ( n - i - 1 ) );
 		}
-		return r;
+		return cast(T) r;
 	}
 
 	public ubyte read_b(int n)
@@ -248,6 +285,42 @@ unittest
 
 	assert(bs.eof);
 	assert(bs.bits_read == 24);
+}
+
+unittest
+{
+	auto bs = new BitstreamReader([0x12, 0x25, 0xf1, 0x25, 0xf1]);
+	auto vals = [0,0,0,1, 0,0,1,0, 0,0,1,0, 0,1,0,1, 1,1,1,1, 0,0,0,1, 0,0,1,0, 0,1,0,1, 1,1,1,1, 0,0,0,1];
+
+	uint preapre_uint(int[] v)
+	{
+		uint r = 0;
+		for(size_t i=0; i<v.length; ++i)
+		{
+			r = r << 1;
+			r |= v[i] & 0x01;
+		}
+
+		return r;
+	}
+
+	assert(preapre_uint(vals[0..8]) == 0x12);
+	assert(preapre_uint(vals[0..16]) == 0x1225);
+	assert(preapre_uint(vals[4..16]) == 0x225);
+
+	for(uint i=0; i<vals.length; ++i)
+	{
+		for(uint j=0; j<vals.length - i; ++j)
+		{
+			auto nb = bs.nextbits(j);
+			assert(nb == preapre_uint(vals[i..i+j]));
+		}
+
+		bs.skip_u1;
+	}
+
+	assert(bs.eof);
+	assert(bs.bits_read == 40);
 }
 
 unittest
