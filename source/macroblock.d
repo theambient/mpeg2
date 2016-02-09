@@ -36,7 +36,7 @@ struct MacroBlock
 	ubyte dct_type;
 	ubyte quantiser_scale_code;
 	bool[2][2] motion_vertical_field_select;
-	ubyte[2][2][2] motion_code;
+	byte[2][2][2] motion_code;
 	ubyte[2][2][2] motion_residual;
 	ubyte[2] dmvector;
 	uint coded_block_pattern;
@@ -126,7 +126,7 @@ struct MacroBlock
 		motion_code[r][s][0] = bs.read_mc;
 		if(this.s.ph.f_code[s][0] != 1 && motion_code[r][s][0] != 0)
 		{
-			motion_residual[r][s][0] = bs.read_mr();
+			motion_residual[r][s][0] = bs.read_u!ubyte(this.s.ph.f_code[s][0] - 1);
 		}
 		if(predinfo.dmv == 1)
 		{
@@ -136,7 +136,7 @@ struct MacroBlock
 		motion_code[r][s][1] = bs.read_mc;
 		if(this.s.ph.f_code[s][1] != 1 && motion_code[r][s][1] != 0)
 		{
-			motion_residual[r][s][1] = bs.read_mr();
+			motion_residual[r][s][1] = bs.read_u!ubyte(this.s.ph.f_code[s][1] - 1);
 		}
 		if(predinfo.dmv == 1)
 		{
