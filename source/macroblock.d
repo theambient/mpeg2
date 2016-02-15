@@ -2,6 +2,7 @@
 module macroblock;
 
 import std.exception;
+import std.stdio;
 import bitstream;
 import vlc;
 import decoder;
@@ -189,13 +190,14 @@ struct MacroBlock
 
 		short run, level;
 		int idx = p.intra;
-		bool eob = bs.read_dct(idx == 0, run, level);
+		bool eob = !bs.read_dct(idx == 0, run, level, s.ph.intra_vlc_format);
 		while(!eob)
 		{
+			//writefln("block(%d): rl: (%d, %d) idx: %d", i, run, level, idx);
 			idx += run;
 			blocks[i].coeffs[idx] = level;
 			++idx;
-			eob = bs.read_dct(false, run, level);
+			eob = !bs.read_dct(false, run, level, s.ph.intra_vlc_format);
 		}
 	}
 
@@ -247,6 +249,56 @@ struct MacroBlock
 			this.dct_type = bs.read_u1;
 		}
 	}
+
+	void dump_block(int idx)
+	{
+		writefln("    block(%d):", idx);
+		for(size_t i=0; i<8; ++i)
+		{
+			writef("        ");
+			for(size_t j=0; j<8; ++j)
+			{
+				writef("%3d ", blocks[idx].coeffs[i*8+j]);
+			}
+			writefln("");
+		}
+	}
+
+	void dump(bool with_blocks = false)
+	{
+		auto mb = this;
+
+		writefln("macroblock:");
+		writefln("    params   : %s", mb.p);
+		writefln("    type     : %d", mb.type);
+		writefln("    incr     : %d", mb.incr);
+
+		if(p.quant)
+		{
+			writefln("    type     : %d", mb.quantiser_scale_code);
+		}
+
+		if(p.motion_forward || (p.intra && s.ph.concealment_motion_vectors))
+		{
+		}
+
+		if(p.motion_backward)
+		{
+		}
+
+		if(p.pattern)
+		{
+			writefln("    cbp      : %d", mb.coded_block_pattern);
+		}
+
+		if(with_blocks)
+		{
+			for(ubyte i=0; i< block_count(); ++i)
+			{
+				dump_block(i);
+			}
+		}
+	}
 }
 
 struct MbParams
@@ -258,6 +310,23 @@ struct MbParams
 	bool intra;
 	bool spartial_temporal_weight_code_flag;
 	uint permitted_spatial_temporal_weight_classes;
+
+	string toString()
+	{
+		string s = "";
+
+		if(quant) s ~= "quant,";
+		if(motion_forward) s ~= "motion_forward,";
+		if(motion_backward) s ~= "motion_backward,";
+		if(pattern) s ~= "pattern,";
+		if(intra) s ~= "intra,";
+		if(spartial_temporal_weight_code_flag) s ~= "spartial_temporal_weight_code_flag,";
+
+		if(s.length > 0)
+			s = s[0..$-1];
+
+		return s;
+	}
 }
 
 struct PredictionInfo

@@ -2,6 +2,7 @@
 module vlc;
 
 import std.array;
+import std.exception;
 import std.typecons;
 import bitstream;
 
@@ -15,7 +16,7 @@ private struct VlcTab
 
 struct DCTtab
 {
-	byte run, level, len;
+	short run, level, len;
 }
 
 const int ERROR = -1;
@@ -29,7 +30,8 @@ private uint read_vlc(uint max_bits)(BitstreamReader bs, VlcTable table)
 	{
 		++i;
 	}
-
+	//std.stdio.writefln("vlc: (%d,%d,%d)", max_bits, i, table.length);
+	assert(i < table.length);
 	bs.skip_u(table[i][1]);
 
 	return i;
@@ -371,12 +373,12 @@ public ubyte read_dc_size_chroma(BitstreamReader bs)
 	VlcTab e;
 	if (bits<31)
 	{
-		e = DClumtab0[bits];
+		e = DCchromtab0[bits];
 	}
 	else
 	{
 		bits = bs.nextbits(10) - 0x3e0;
-		e = DClumtab1[bits];
+		e = DCchromtab1[bits];
 	}
 
 	bs.skip_u(e.skip);
@@ -576,17 +578,28 @@ DCTtab[16] DCTtab6 =
 	{30,1,16}, {29,1,16}, {28,1,16}, {27,1,16}
 ];
 
-public bool read_dct(BitstreamReader bs, bool first, out short run, out short level)
+public bool read_dct(BitstreamReader bs, bool first, out short run, out short level, bool intra_vlc_format)
 {
 	auto code = bs.nextbits(16);
+	int sign;
 	DCTtab tab;
 
-	if (code>=16384)
+	if (code>=16384 && !intra_vlc_format)
 		tab = DCTtabnext[(code>>12)-4];
 	else if (code>=1024)
-		tab = DCTtab0[(code>>8)-4];
+	{
+		if (intra_vlc_format)
+			tab = DCTtab0a[(code>>8)-4];
+		else
+			tab = DCTtab0[(code>>8)-4];
+	}
 	else if (code>=512)
-		tab = DCTtab1[(code>>6)-8];
+	{
+		if (intra_vlc_format)
+			tab = DCTtab1a[(code>>6)-8];
+		else
+			tab = DCTtab1[(code>>6)-8];
+	}
 	else if (code>=256)
 		tab = DCTtab2[(code>>4)-16];
 	else if (code>=128)
@@ -604,25 +617,29 @@ public bool read_dct(BitstreamReader bs, bool first, out short run, out short le
 
 	bs.skip_u(tab.len);
 
-    if (tab.run == 64) /* end_of_block */
+	if (tab.run == 64) /* end_of_block */
 		return false;
 
 	if (tab.run==65) /* escape */
 	{
-		tab.run = cast(ubyte) bs.read_u(6);
+		//std.stdio.writefln("mb escape");
+		tab.run = cast(short) bs.read_u(6);
+		tab.level = cast(short) bs.read_u(12);
 
-		tab.level = cast(ubyte) bs.read_u(8);
-
-		if (tab.level == 0)
-			tab.level = cast(ubyte) bs.read_u(8);
-		else if (tab.level == 128)
-			tab.level = cast(ubyte)(bs.read_u(8) - 256);
-		else if (tab.level > 128)
-			tab.level -= 256;
-
-		if(tab.level < 0)
-			tab.level = -tab.level;
+		enforce((tab.level&2047) != 0, "invalid macroblock DCT escape code");
+		sign = tab.level>=2048;
+		if(sign)
+		{
+			tab.level = cast(short)(4096 - tab.level);
+		}
 	}
+	else
+	{
+		sign = bs.read_u1;
+	}
+
+	if(sign)
+		tab.level = -tab.level;
 
 	run = tab.run;
 	level = tab.level;
@@ -657,10 +674,29 @@ unittest
 
 unittest
 {
-	auto bs = new BitstreamReader([0b11101111, 0x00100110, 0x00000111, 1,1]);
+	auto bs = new BitstreamReader([0b11101111, 0b00100110, 0b00000111, 1,1]);
 	// 60, 28, 6, 31
 	assert(bs.read_cbp() == 60);
 	assert(bs.read_cbp() == 28);
 	assert(bs.read_cbp() == 06);
 	assert(bs.read_cbp() == 31);
+}
+
+unittest
+{
+	auto bs = new BitstreamReader([0b01011011, 0b01000000, 0, 1,1]);
+	bool r;
+	short run, level;
+	r = bs.read_dct(true, run, level, false);
+	assert(r);
+	assert(run == 2);
+	assert(level == -1);
+
+	r = bs.read_dct(true, run, level, false);
+	assert(r);
+	assert(run == 1);
+	assert(level == 1);
+
+	r = bs.read_dct(true, run, level, false);
+	assert(!r);
 }

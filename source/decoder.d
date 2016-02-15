@@ -44,6 +44,7 @@ class Frame
 
 	uint dts;
 	uint pts;
+	uint next_mb = 0;
 
 	this(size_t width, size_t height)
 	{
@@ -55,7 +56,9 @@ class Frame
 
 	void process(MacroBlock mb)
 	{
-
+		next_mb += mb.incr;
+		writefln("macroblock(%d):", next_mb);
+		mb.dump();
 	}
 }
 
@@ -351,7 +354,16 @@ class Slice
 		}
 
 		bs.skip_u1;
+	}
 
+	void dump()
+	{
+		writefln("slice %02d:", slice_vert_pos);
+		writefln("\tquantiser_scale_code:    %d", quantiser_scale_code);
+		writefln("\tslice_extension_flag:    %d", slice_extension_flag);
+		writefln("\tintra_slice:             %d", intra_slice);
+		writefln("\tslice_picture_id_enable: %d", slice_picture_id_enable);
+		writefln("\tslice_picture_id:        %d", slice_picture_id);
 	}
 
 	PictureHeader ph;
@@ -386,6 +398,8 @@ class Decoder
 		this.bs = new BitstreamReader(content);
 
 		expected_extension = ExpectedExtension.Sequence;
+
+		frame = new Frame(100,100);
 	}
 
 	Frame decode()
@@ -533,10 +547,14 @@ class Decoder
 		auto s = new Slice(ph);
 
 		s.parse(bs, start_code);
+		s.dump();
 
 		do {
 			auto mb = MacroBlock(s);
+			auto oldp = bs.bits_read;
 			mb.parse(bs);
+			auto newp = bs.bits_read;
+			writefln("mb: %d -> %d (%d)", oldp, newp, newp - oldp);
 			frame.process(mb);
 		} while( bs.nextbits(23) != 0);
 	}
