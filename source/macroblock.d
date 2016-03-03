@@ -205,7 +205,10 @@ struct MacroBlock
 	{
 		if(s.ph.picture_structure == PictureStructure.Frame)
 		{
-			return frame_prediction_info[motion_type][0];
+			if(s.ph.frame_pred_frame_dct == 0)
+				return frame_prediction_info[motion_type][0];
+			else
+				return frame_prediction_info[2][0]; // Frame-based
 		}
 		else
 		{

@@ -26,11 +26,13 @@ private uint read_vlc(uint max_bits)(BitstreamReader bs, VlcTable table)
 	uint bits = bs.nextbits(max_bits);
 
 	int i = 0;
+	//std.stdio.writefln("---");
+	//std.stdio.writefln("vlc: %b =?= %b (%d,%d,%d)", bits, table[i][0], max_bits, i, table.length);
 	while(i < table.length && bits < table[i][0])
 	{
 		++i;
+		//if(i < table.length) std.stdio.writefln("vlc: %b =?= %b (%d,%d,%d)", bits, table[i][0], max_bits, i, table.length);
 	}
-	//std.stdio.writefln("vlc: (%d,%d,%d)", max_bits, i, table.length);
 	assert(i < table.length);
 	bs.skip_u(table[i][1]);
 
@@ -166,8 +168,6 @@ public uint read_mb_type(BitstreamReader bs, ubyte picture_coding_type)
 			break;
 	}
 
-	assert(v < 2);
-
 	return v;
 }
 
@@ -290,14 +290,23 @@ public byte read_mc(BitstreamReader bs)
 
 	static assert(table.length == 17);
 
-	byte v = cast(byte) bs.read_vlc!11(table);
-
-	if(v & 0x01)
+	auto bits = bs.nextbits(11);
+	int i = 0;
+	while(i < table.length && bits < table[i][0])
 	{
-		v = -v;
+		++i;
 	}
 
-	return v;
+	bs.skip(table[i][1]);
+
+	bits >>= 11 - table[i][1];
+
+	if(bits & 0x01)
+	{
+		i = -i;
+	}
+
+	return cast(byte) i;
 }
 
 // Table B.11
@@ -584,8 +593,9 @@ public bool read_dct(BitstreamReader bs, bool first, out short run, out short le
 	int sign;
 	DCTtab tab;
 
+	DCTtab[] DCTtabfirst_next = first?DCTtabfirst:DCTtabnext;
 	if (code>=16384 && !intra_vlc_format)
-		tab = DCTtabnext[(code>>12)-4];
+		tab = DCTtabfirst_next[(code>>12)-4];
 	else if (code>=1024)
 	{
 		if (intra_vlc_format)
@@ -648,6 +658,31 @@ public bool read_dct(BitstreamReader bs, bool first, out short run, out short le
 
 unittest
 {
+	static VlcTable table = [
+		tuple(0b100,1),
+		tuple(0b010,2),
+		tuple(0b001,3),
+	];
+
+	void test(ubyte b, int v)
+	{
+		auto bs = new BitstreamReader([b]);
+		assert(bs.read_vlc!3(table) == v);
+	}
+
+	test(0b100 << 5, 0);
+	test(0b101 << 5, 0);
+	test(0b110 << 5, 0);
+	test(0b111 << 5, 0);
+
+	test(0b010 << 5, 1);
+	test(0b010 << 5, 1);
+
+	test(0b001 << 5, 2);
+}
+
+unittest
+{
 	auto bs = new BitstreamReader([0b10110100, 0b010_0011_1, 0]);
 
 	assert(bs.read_mb_inc() == 1);
@@ -692,11 +727,34 @@ unittest
 	assert(run == 2);
 	assert(level == -1);
 
-	r = bs.read_dct(true, run, level, false);
+	r = bs.read_dct(false, run, level, false);
 	assert(r);
 	assert(run == 1);
 	assert(level == 1);
 
-	r = bs.read_dct(true, run, level, false);
+	r = bs.read_dct(false, run, level, false);
 	assert(!r);
+}
+
+unittest
+{
+	void test(ushort b, int v)
+	{
+		auto bs = new BitstreamReader([b >> 8, b & 0xff]);
+		assert(bs.read_mc() == v);
+	}
+
+	test(0b1000_0000_0000_0000, 0);
+
+	test(0b0100_0000_0000_0000, +1);
+	test(0b0110_0000_0000_0000, -1);
+
+	test(0b0010_0000_0000_0000, +2);
+	test(0b0011_0000_0000_0000, -2);
+
+	test(0b0001_0000_0000_0000, +3);
+	test(0b0001_1000_0000_0000, -3);
+
+	test(0b0000_1100_0000_0000, +4);
+	test(0b0000_1110_0000_0000, -4);
 }

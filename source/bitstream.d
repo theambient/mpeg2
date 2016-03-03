@@ -117,6 +117,8 @@ public class BitstreamReader
 		}
 	}
 
+	alias skip = skip_u;
+
 	public uint32 peek_u1()
 	{
 		uint32 r = 0;
