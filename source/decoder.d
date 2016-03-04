@@ -398,8 +398,6 @@ class Decoder
 		this.bs = new BitstreamReader(content);
 
 		expected_extension = ExpectedExtension.Sequence;
-
-		frame = new Frame(100,100);
 	}
 
 	Frame decode()
@@ -418,6 +416,7 @@ class Decoder
 		bs.align_to_next_byte();
 
 		int state = 0;
+		int cnt = 0;
 
 		immutable int[][] xlat = [
 			[1, 0],
@@ -428,6 +427,7 @@ class Decoder
 		while(state < 3 && !bs.eof)
 		{
 			ubyte b = bs.read_u8();
+			++cnt;
 
 			if(b != 0 && b != 1)
 			{
@@ -442,6 +442,8 @@ class Decoder
 		{
 			return;
 		}
+
+		if(cnt > 3) writefln("warn: skipped %s bytes to next high level syntax element", cnt - 3);
 
 		auto start_code = bs.read_u8();
 
@@ -520,7 +522,7 @@ class Decoder
 
 		expected_extension = ExpectedExtension.ExtensionAndUserData;
 		extension_i = 0;
-		//si.dump();
+		si.dump();
 	}
 
 	private void _parse_extension(ubyte start_code)
@@ -564,6 +566,7 @@ class Decoder
 		ph.parse(bs);
 		expected_extension = ExpectedExtension.Picture;
 		extension_i = -1;
+		frame = new Frame(si.width, si. height);
 	}
 
 	private void _parse_extension_and_user_data(int i)

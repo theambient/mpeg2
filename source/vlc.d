@@ -4,6 +4,7 @@ module vlc;
 import std.array;
 import std.exception;
 import std.typecons;
+import std.string;
 import bitstream;
 
 private alias VlcTableEntry = Tuple!(uint, uint);
@@ -252,7 +253,7 @@ public ubyte read_cbp(BitstreamReader bs)
 		44, 52, 56,  1, 61,  2, 62, 24, 36,  3,
 		63,  5,  9, 17, 33,  6, 10, 18, 34,  7,
 		11, 19, 35, 13, 49, 21, 41, 14, 50, 22,
-		42, 16, 51, 23, 43, 25, 37, 26, 38, 29,
+		42, 15, 51, 23, 43, 25, 37, 26, 38, 29,
 		45, 53, 57, 30, 46, 54, 58, 31, 47, 55,
 		59, 27, 39,  0
 	];
@@ -622,7 +623,7 @@ public bool read_dct(BitstreamReader bs, bool first, out short run, out short le
 		tab = DCTtab6[code-16];
 	else
 	{
-		throw new Exception("invalid Huffman code");
+		throw new Exception("invalid Huffman code for code %016b".format(code));
 	}
 
 	bs.skip_u(tab.len);
@@ -715,6 +716,22 @@ unittest
 	assert(bs.read_cbp() == 28);
 	assert(bs.read_cbp() == 06);
 	assert(bs.read_cbp() == 31);
+
+	void test(ushort b, int v)
+	{
+		auto bs = new BitstreamReader([b >> 8, b & 0xff]);
+		assert(bs.read_cbp() == v);
+	}
+
+	test(0b0001_1000_0000_0000, 41);
+	test(0b0000_1111_0000_0000, 25);
+	test(0b0000_0011_0000_0000, 47);
+	test(0b0000_0001_0000_0000, 39);
+
+	test(0b0001_0011_0000_0000, 15);
+	test(0b1011_0000_0000_0000, 16);
+
+	test(0b0000_0000_1000_0000, 0);
 }
 
 unittest
