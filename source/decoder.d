@@ -400,10 +400,15 @@ class Decoder
 
 	Frame decode()
 	{
-		while(!_frame_ready())
+		while(!bs.eof && !_frame_ready())
 		{
 			_read_syntax_element();
 			//_process_syntax_element(se);
+		}
+
+		if(_frames.length == 0)
+		{
+			return null;
 		}
 
 		auto f = _frames[0];
