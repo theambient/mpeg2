@@ -317,7 +317,7 @@ public byte read_dmvector(BitstreamReader bs)
 
 	if(v != 0)
 	{
-		v = bs.read_u!byte(2);
+		v = bs.read_b(2);
 
 		if(v & 0x1) v = -v;
 	}

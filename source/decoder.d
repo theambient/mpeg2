@@ -533,7 +533,7 @@ class Decoder
 
 	private void _parse_extension(ubyte start_code)
 	{
-		ubyte extension_start_code = bs.read_u!ubyte(4);
+		ubyte extension_start_code = bs.read_b(4);
 
 		_ext_parsers[extension_start_code]();
 	}

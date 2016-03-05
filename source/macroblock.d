@@ -130,7 +130,7 @@ struct MacroBlock
 		motion_code[r][s][0] = bs.read_mc;
 		if(this.s.ph.f_code[s][0] != 1 && motion_code[r][s][0] != 0)
 		{
-			motion_residual[r][s][0] = bs.read_u!ubyte(this.s.ph.f_code[s][0] - 1);
+			motion_residual[r][s][0] = bs.read_b(this.s.ph.f_code[s][0] - 1);
 		}
 		if(predinfo.dmv == 1)
 		{
@@ -140,7 +140,7 @@ struct MacroBlock
 		motion_code[r][s][1] = bs.read_mc;
 		if(this.s.ph.f_code[s][1] != 1 && motion_code[r][s][1] != 0)
 		{
-			motion_residual[r][s][1] = bs.read_u!ubyte(this.s.ph.f_code[s][1] - 1);
+			motion_residual[r][s][1] = bs.read_b(this.s.ph.f_code[s][1] - 1);
 		}
 		if(predinfo.dmv == 1)
 		{
@@ -238,12 +238,12 @@ struct MacroBlock
 			{
 				if(s.ph.frame_pred_frame_dct == 0)
 				{
-					this.motion_type = bs.read_u!ubyte(2);
+					this.motion_type = bs.read_b(2);
 				}
 			}
 			else
 			{
-				this.motion_type = bs.read_u!ubyte(2);
+				this.motion_type = bs.read_b(2);
 			}
 		}
 
