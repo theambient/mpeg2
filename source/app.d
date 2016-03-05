@@ -14,10 +14,11 @@ class App
 
 		auto decoder = new Decoder(input_file);
 
+		int cnt = 0;
 		for(Frame f = decoder.decode(); f !is null; f = decoder.decode())
 		{
-			writefln("here");
-			//dump f
+			writefln("decoded pic #%d", cnt);
+			++cnt;
 		}
 	}
 }

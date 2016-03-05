@@ -1,6 +1,7 @@
 
 module decoder;
 
+import std.array;
 import std.stdio;
 import std.string;
 import std.exception;
@@ -405,7 +406,9 @@ class Decoder
 			//_process_syntax_element(se);
 		}
 
-		return null;
+		auto f = _frames[0];
+		_frames.popFront();
+		return f;
 	}
 
 	void _read_syntax_element()
@@ -454,8 +457,19 @@ class Decoder
 		_parsers[start_code](start_code);
 	}
 
+	private void _maybe_flush_picture()
+	{
+		if(frame !is null)
+		{
+			_frames ~= frame;
+			frame = null;
+		}
+	}
+
 	private void _parse_sequence_header(ubyte start_code)
 	{
+		_maybe_flush_picture();
+
 		si.width = bs.read_u(12);
 		si.height = bs.read_u(12);
 		si.aspect_ratio = bs.read_u(4);
@@ -552,6 +566,7 @@ class Decoder
 
 	private void _parse_picture_header(ubyte start_code)
 	{
+		_maybe_flush_picture();
 		ph.parse(bs);
 		frame = new Frame(si.width, si. height);
 	}
@@ -573,7 +588,7 @@ class Decoder
 
 	private bool _frame_ready()
 	{
-		return _cnt > 10;
+		return _frames.length > 0;
 	}
 
 	private void _init_parsers()
@@ -598,11 +613,11 @@ class Decoder
 	private BitstreamReader bs;
 	private Parser[ubyte] _parsers;
 	private ExtParser[ubyte] _ext_parsers;
-	private int _cnt;
 	private SequenceInfo si;
 	private GopInfo gopi;
 	private PictureHeader ph;
 	private Frame frame;
+	private Frame[] _frames;
 }
 
 enum ExpectedExtension
