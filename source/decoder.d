@@ -57,8 +57,8 @@ class Frame
 	void process(MacroBlock mb)
 	{
 		next_mb += mb.incr;
-		writefln("macroblock(%d):", next_mb);
-		mb.dump();
+		writefln("mb.incr: %d MBA: %d cbp: %d", mb.incr, next_mb - 1, mb.coded_block_pattern);
+		//mb.dump();
 	}
 }
 
@@ -522,7 +522,7 @@ class Decoder
 
 		expected_extension = ExpectedExtension.ExtensionAndUserData;
 		extension_i = 0;
-		si.dump();
+		//si.dump();
 	}
 
 	private void _parse_extension(ubyte start_code)
@@ -537,7 +537,8 @@ class Decoder
 				break;
 			case ExpectedExtension.Picture:
 				ph.parse_extension(bs);
-				ph.dump();
+				//ph.dump();
+				writefln("================== pic #%03d =======================", ph.temporal_reference);
 				expected_extension = ExpectedExtension.ExtensionAndUserData;
 				extension_i = 2;
 				break;
@@ -549,14 +550,14 @@ class Decoder
 		auto s = new Slice(ph);
 
 		s.parse(bs, start_code);
-		s.dump();
+		//s.dump();
 
 		do {
 			auto mb = MacroBlock(s);
 			auto oldp = bs.bits_read;
 			mb.parse(bs);
 			auto newp = bs.bits_read;
-			writefln("mb: %d -> %d (%d)", oldp, newp, newp - oldp);
+			//writefln("mb: %d -> %d (%d)", oldp, newp, newp - oldp);
 			frame.process(mb);
 		} while( bs.nextbits(23) != 0);
 	}
