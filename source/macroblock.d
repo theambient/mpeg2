@@ -50,12 +50,15 @@ struct MacroBlock
 
 	void parse(BitstreamReader bs)
 	{
-		this.incr = bs.read_mb_inc();
+		int temp_incr = bs.read_mb_inc();
 
-		while(incr == 34)
+		while(temp_incr == 34)
 		{
-			this.incr = bs.read_mb_inc();
+			this.incr += 33;
+			temp_incr = bs.read_mb_inc();
 		}
+
+		this.incr += temp_incr;
 
 		parse_modes(bs);
 
@@ -301,6 +304,28 @@ struct MacroBlock
 				dump_block(i);
 			}
 		}
+	}
+
+	void dump2(int mba, bool with_blocks)
+	{
+		writefln("mb.incr: %d MBA: %d cbp: %d", incr, mba, coded_block_pattern);
+
+		if(!with_blocks) return;
+
+		for(ubyte bidx=0; bidx< block_count(); ++bidx)
+		{
+			writef("MBA #%d block #%d: ", mba, bidx);
+
+			for(size_t i=0; i<8; ++i)
+			{
+				for(size_t j=0; j<8; ++j)
+				{
+					writef("%3d ", blocks[bidx].coeffs[i*8+j]);
+				}
+			}
+			writeln();
+		}
+
 	}
 }
 

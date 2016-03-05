@@ -44,7 +44,7 @@ class Frame
 
 	uint dts;
 	uint pts;
-	uint next_mb = 0;
+	uint next_mb = -1;
 
 	this(size_t width, size_t height)
 	{
@@ -56,8 +56,9 @@ class Frame
 
 	void process(MacroBlock mb)
 	{
+		//writef("mb.incr: %d MBA: %d cbp: %d ", mb.incr, next_mb - 1, mb.coded_block_pattern);
 		next_mb += mb.incr;
-		writefln("mb.incr: %d MBA: %d cbp: %d", mb.incr, next_mb - 1, mb.coded_block_pattern);
+		//mb.dump2(next_mb, false);
 		//mb.dump();
 	}
 }
@@ -129,8 +130,6 @@ struct PictureHeader
 
 	void parse_extension(BitstreamReader bs)
 	{
-		bs.skip_u(4);
-
 		f_code[0][0] = bs.read_b(4);
 		f_code[0][1] = bs.read_b(4);
 		f_code[1][0] = bs.read_b(4);
@@ -396,8 +395,6 @@ class Decoder
 		content = f.rawRead(content);
 
 		this.bs = new BitstreamReader(content);
-
-		expected_extension = ExpectedExtension.Sequence;
 	}
 
 	Frame decode()
@@ -487,10 +484,8 @@ class Decoder
 		//si.dump();
 	}
 
-	private void _parse_sequence_extention(ubyte start_code)
+	private void _parse_sequence_extention()
 	{
-		bs.skip_u(4);
-
 		ubyte pal = bs.read_u8(); // profile_and_level
 
 		if(pal & 0x80)
@@ -519,30 +514,23 @@ class Decoder
 		bs.read_u(5);
 
 		enforce(bs.is_byte_aligned);
-
-		expected_extension = ExpectedExtension.ExtensionAndUserData;
-		extension_i = 0;
-		//si.dump();
+		si.dump();
 	}
 
 	private void _parse_extension(ubyte start_code)
 	{
-		final switch(expected_extension)
-		{
-			case ExpectedExtension.Sequence:
-				_parse_sequence_extention(start_code);
-				break;
-			case ExpectedExtension.ExtensionAndUserData:
-				_parse_extension_and_user_data(extension_i);
-				break;
-			case ExpectedExtension.Picture:
-				ph.parse_extension(bs);
-				//ph.dump();
-				writefln("================== pic #%03d =======================", ph.temporal_reference);
-				expected_extension = ExpectedExtension.ExtensionAndUserData;
-				extension_i = 2;
-				break;
-		}
+		ubyte extension_start_code = bs.read_u!ubyte(4);
+
+		_ext_parsers[extension_start_code]();
+	}
+
+	private void _parse_picture_extension()
+	{
+		ph.parse_extension(bs);
+		writefln("================== pic #%03d =======================", ph.temporal_reference);
+		ph.dump();
+		//expected_extension = ExpectedExtension.ExtensionAndUserData;
+		//extension_i = 2;
 	}
 
 	private void _parse_slice(ubyte start_code)
@@ -565,8 +553,6 @@ class Decoder
 	private void _parse_picture_header(ubyte start_code)
 	{
 		ph.parse(bs);
-		expected_extension = ExpectedExtension.Picture;
-		extension_i = -1;
 		frame = new Frame(si.width, si. height);
 	}
 
@@ -581,8 +567,8 @@ class Decoder
 		gopi.closed_gop = bs.read_bool;
 		gopi.broken_link = bs.read_bool;
 
-		expected_extension = ExpectedExtension.ExtensionAndUserData;
-		extension_i = 1;
+		//expected_extension = ExpectedExtension.ExtensionAndUserData;
+		//extension_i = 1;
 	}
 
 	private bool _frame_ready()
@@ -601,18 +587,21 @@ class Decoder
 		{
 			_parsers[sc] = &this._parse_slice;
 		}
+
+		_ext_parsers[0x01] = &_parse_sequence_extention;
+		_ext_parsers[0x08] = &_parse_picture_extension;
 	}
 
 	private alias Parser = void delegate (ubyte);
+	private alias ExtParser = void delegate ();
 
 	private BitstreamReader bs;
 	private Parser[ubyte] _parsers;
+	private ExtParser[ubyte] _ext_parsers;
 	private int _cnt;
 	private SequenceInfo si;
 	private GopInfo gopi;
 	private PictureHeader ph;
-	private ExpectedExtension expected_extension;
-	private int extension_i = 1;
 	private Frame frame;
 }
 
