@@ -9,10 +9,15 @@ import stdint;
 import bitstream;
 import vlc;
 import macroblock;
+import matrix;
+import dct;
+import math;
+
+const MACROBLOCK_SIZE = 16;
 
 class Plane
 {
-	private ubyte[] _pixels;
+	private short[] _pixels;
 	private size_t _width;
 	private size_t _height;
 
@@ -20,24 +25,23 @@ class Plane
 	{
 		_width = width;
 		_height = height;
-		_pixels = new ubyte[width * height];
+		_pixels = new short[width * height];
 	}
 
-	ref ubyte opIndex(size_t i, size_t j)
+	ref short opIndex(size_t x, size_t y)
 	{
-		return _pixels[i + _width*j];
+		return _pixels[y * _width + x];
 	}
 
-	ubyte opIndex(size_t i, size_t j) const
+	short opIndex(size_t x, size_t y) const
 	{
-		return _pixels[i + _width*j];
+		return _pixels[y * _width + x];
 	}
 }
 
-class SyntaxElement
-{
+short[64] ZSCAN = [
 
-}
+];
 
 class Frame
 {
@@ -45,22 +49,103 @@ class Frame
 
 	uint dts;
 	uint pts;
-	uint next_mb = -1;
+	uint mba = -1;
+	size_t width;
+	size_t height;
+	SequenceInfo si;
+	PictureHeader ph;
 
-	this(size_t width, size_t height)
+	this(size_t width, size_t height, PictureHeader ph)
 	{
+		this.width = width;
+		this.height = height;
+		this.si = si;
+		this.ph = ph;
+
 		foreach(i; 0..3)
 		{
 			planes[i] = new Plane(width, height);
 		}
 	}
 
-	void process(MacroBlock mb)
+	uint width_in_mb() @property const
+	{
+		return cast(uint) width % MACROBLOCK_SIZE;
+	}
+
+	uint height_in_mb() @property const
+	{
+		return cast(uint) width / MACROBLOCK_SIZE;
+	}
+
+	void process(const ref MacroBlock mb)
 	{
 		//writef("mb.incr: %d MBA: %d cbp: %d ", mb.incr, next_mb - 1, mb.coded_block_pattern);
-		next_mb += mb.incr;
+		mba += mb.incr;
 		//mb.dump2(next_mb, false);
 		//mb.dump();
+
+		int y0 = (mba / height_in_mb) * MACROBLOCK_SIZE;
+		int x0 = (mba % height_in_mb) * MACROBLOCK_SIZE;
+
+		foreach(bi, b; mb.blocks)
+		{
+			if(bi>=4) break; // TODO: process chroma blocks
+			short[64] block;
+			block = reorder_coefs(b.coeffs, ph.alternate_scan);
+			iquant(block, bi, mb);
+			idct_annexA(block);
+
+			auto plane = planes[0];
+
+			for(int i=0; i<8; ++i)
+			{
+				for(int j=0; j<8; ++j)
+				{
+					plane[x0 + j, y0 + i] = block[i * 8 + j];
+				}
+			}
+		}
+	}
+
+	private short[64] reorder_coefs(short[64] c, int scan_id)
+	{
+		short[64] r;
+
+		for(int i=0; i<64; ++i)
+		{
+			r[SCAN_MATRIX[scan_id][i]] = c[i];
+		}
+
+		return r;
+	}
+
+	alias quant_saturate = saturate!(short, -2048, 2047);
+
+	private void iquant(ref short[64] b, ulong c, const ref MacroBlock mb)
+	{
+		auto quantiser_scale = QUANTISER_SCALE_MATRIX[ph.q_scale_type][mb.s.quantiser_scale_code];
+		int cc = si.chroma_format == ChromaFormat.C420? 0: (c >= 4);
+		int w = (mb.p.intra? 0: 1) + 2 * cc;
+
+		b[0] *=  INTRA_DC_MULT[ph.intra_dc_precision];
+		b[0] = quant_saturate(b[0]);
+
+		short sum = b[0]; // for mismatch control
+		for(int i=1; i<64; ++i)
+		{
+			b[i] = cast(short)((2 * b[i] + mb.p.intra?0:sign(b[i])) * DEFAULT_QUANT_MATRIX[w][i] * quantiser_scale / 32);
+
+			b[i] = quant_saturate(b[i]);
+
+			sum |= b[i];
+		}
+
+		// mismatch control
+		if((sum & 1) == 0)
+		{
+			b[63] += (b[63]&1)? -1: 1;
+		}
 	}
 }
 
@@ -491,6 +576,7 @@ class Decoder
 		if(si.load_intra_quantizer_matrix)
 		{
 			bs.read_bytes(si.intra_quantizer_matrix);
+			throw new Exception("custom quantizer matrixes are not supported");
 		}
 
 		si.load_non_intra_quantizer_matrix = cast(bool) bs.read_u1;
@@ -498,6 +584,7 @@ class Decoder
 		if(si.load_non_intra_quantizer_matrix)
 		{
 			bs.read_bytes(si.non_intra_quantizer_matrix);
+			throw new Exception("custom quantizer matrixes are not supported");
 		}
 
 		//si.dump();
@@ -509,7 +596,7 @@ class Decoder
 
 		if(pal & 0x80)
 		{
-			// escape code
+			throw new Exception("escape code not implemented");
 		}
 		else
 		{
@@ -573,7 +660,7 @@ class Decoder
 	{
 		_maybe_flush_picture();
 		ph.parse(bs);
-		frame = new Frame(si.width, si. height);
+		frame = new Frame(si.width, si. height, ph);
 	}
 
 	private void _parse_extension_and_user_data(int i)
