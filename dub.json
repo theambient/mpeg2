@@ -2,7 +2,7 @@
 	"name": "mpeg2",
 	"description": "mpeg2 decoder",
 	"targetType": "executable",
-	"copyright": "Copyright © 2013, Ruslan Mullakhmetov",
+	"copyright": "Copyright © 2015, Ruslan Mullakhmetov",
 	"authors": [
 		"Ruslan Mullakhmetov"
 	],

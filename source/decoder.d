@@ -45,7 +45,7 @@ class Frame
 
 	uint dts;
 	uint pts;
-	uint previous_macroblock_address = -1;
+	int previous_macroblock_address = -1;
 	size_t width;
 	size_t height;
 	SequenceInfo si;
@@ -67,20 +67,35 @@ class Frame
 
 	uint width_in_mb() @property const
 	{
-		return cast(uint) width % MACROBLOCK_SIZE;
+		return cast(uint) width / MACROBLOCK_SIZE;
 	}
 
 	uint height_in_mb() @property const
 	{
-		return cast(uint) width / MACROBLOCK_SIZE;
+		return cast(uint) height / MACROBLOCK_SIZE;
+	}
+
+	void dump_block(const short[64] block, int mba, ulong comp, string comment = "")
+	{
+		writefln("MBA #%d block #%d%s: ", mba, comp, comment);
+
+		for(size_t i=0; i<8; ++i)
+		{
+			writef("    ");
+			for(size_t j=0; j<8; ++j)
+			{
+				writef("%3d ", block[i*8+j]);
+			}
+			writeln();
+		}
+		writeln();
 	}
 
 	void process(const ref MacroBlock mb)
 	{
-		//writef("mb.incr: %d MBA: %d cbp: %d ", mb.incr, next_mb - 1, mb.coded_block_pattern);
-		auto mba = previous_macroblock_address + mb.incr;
+		int mba = previous_macroblock_address + mb.incr;
 		previous_macroblock_address = mba;
-		//mb.dump2(next_mb, false);
+		//mb.dump2(mba, true);
 		//mb.dump();
 
 		if(ph.picture_coding_type == PictureType.I
@@ -89,13 +104,17 @@ class Frame
 			reset_dc_predictors();
 		}
 
-		int y0 = (mba / height_in_mb) * MACROBLOCK_SIZE;
-		int x0 = (mba % height_in_mb) * MACROBLOCK_SIZE;
 
-		foreach(bi, b; mb.blocks)
+		foreach(uint bi, b; mb.blocks)
 		{
+			int y0 = (mba / width_in_mb) * MACROBLOCK_SIZE + (bi % 2) * 8;
+			int x0 = (mba % width_in_mb) * MACROBLOCK_SIZE + (bi / 2) * 8;
+
 			if(bi>=4) break; // TODO: process chroma blocks
 			short[64] block;
+
+			//dump_block(b.coeffs, mba, bi);
+
 			block = reorder_coefs(b.coeffs, ph.alternate_scan);
 
 			uint cc = (bi < 4)? 0 : ((bi - 4) % 2 + 1);
@@ -106,7 +125,9 @@ class Frame
 			dct_pred[cc] = block[0];
 
 			iquant(block, bi, mb);
+			//dump_block(block, mba, bi, " (dct)");
 			idct_annexA(block);
+			//dump_block(block, mba, bi, " (rec samples)");
 
 			auto plane = planes[0];
 
@@ -114,10 +135,13 @@ class Frame
 			{
 				for(int j=0; j<8; ++j)
 				{
-					if(block[i * 8 + j] < 0) writefln("coef: %s", block[i * 8 + j]);
-					assert(block[i * 8 + j] >= 0);
-					assert(block[i * 8 + j] < 256);
-					plane[x0 + j + bi % 2, y0 + i + bi / 2] = block[i * 8 + j];
+					if(block[i * 8 + j] + 128 < 0)
+					{
+						writefln("(%d, %d) negative sample: %s", x0, y0, block[i * 8 + j] + 128);
+					}
+					//assert(block[i * 8 + j] >= 0);
+					//assert(block[i * 8 + j] < 256);
+					plane[x0 + j, y0 + i] = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + 128);
 				}
 			}
 		}
@@ -127,14 +151,15 @@ class Frame
 	{
 		foreach(i; 0..3)
 		{
-			dct_pred[i] = DCT_PRED_DEFAULT[ph.intra_dc_precision];
+			//dct_pred[i] = DCT_PRED_DEFAULT[ph.intra_dc_precision];
+			dct_pred[i] = 0;
 		}
 	}
 
 	void process_new_slice(Slice s)
 	{
 		reset_dc_predictors();
-		previous_macroblock_address = (s.slice_vert_pos - 1) * width_in_mb - 1;
+		previous_macroblock_address = int(s.slice_vert_pos * width_in_mb) - 1;
 	}
 
 	private short[64] reorder_coefs(short[64] c, int scan_id)
@@ -163,7 +188,8 @@ class Frame
 		short sum = b[0]; // for mismatch control
 		for(int i=1; i<64; ++i)
 		{
-			b[i] = cast(short)((2 * b[i] + mb.p.intra?0:sign(b[i])) * DEFAULT_QUANT_MATRIX[w][i] * quantiser_scale / 32);
+			auto k = mb.p.intra?0:sign(b[i]);
+			b[i] = cast(short)((2 * b[i] + k) * DEFAULT_QUANT_MATRIX[w][i] * quantiser_scale / 32);
 
 			b[i] = quant_saturate(b[i]);
 

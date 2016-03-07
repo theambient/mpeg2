@@ -93,7 +93,7 @@ struct MacroBlock
 		}
 	}
 
-	ubyte block_count()
+	ubyte block_count() const
 	{
 		immutable ubyte[] table = [
 			0, // should not happen
@@ -183,12 +183,18 @@ struct MacroBlock
 		{
 			// TODO: optimize
 			uint dc_size = bs.read_dc_size(i<4);
-			short ddd = bs.read_u!short(dc_size);
-			if(ddd >> (dc_size - 1))
+			short dct_diff = bs.read_u!short(dc_size);
+
+			if ((dct_diff & (1<<(dc_size-1)))==0)
 			{
-				ddd = cast(short) (ddd + 1 - (1 << dc_size));
+				dct_diff-= (1<<dc_size) - 1;
 			}
-			blocks[i].coeffs[0] = ddd;
+
+			//if(ddd >> (dc_size - 1))
+			//{
+			//	ddd = cast(short) (ddd + 1 - (1 << dc_size));
+			//}
+			blocks[i].coeffs[0] = dct_diff;
 		}
 
 		short run, level;
@@ -306,7 +312,7 @@ struct MacroBlock
 		}
 	}
 
-	void dump2(int mba, bool with_blocks)
+	void dump2(int mba, bool with_blocks) const
 	{
 		writefln("mb.incr: %d MBA: %d cbp: %d", incr, mba, coded_block_pattern);
 
@@ -314,14 +320,16 @@ struct MacroBlock
 
 		for(ubyte bidx=0; bidx< block_count(); ++bidx)
 		{
-			writef("MBA #%d block #%d: ", mba, bidx);
+			writefln("MBA #%d block #%d: ", mba, bidx);
 
 			for(size_t i=0; i<8; ++i)
 			{
+				writef("    ");
 				for(size_t j=0; j<8; ++j)
 				{
 					writef("%3d ", blocks[bidx].coeffs[i*8+j]);
 				}
+				writeln();
 			}
 			writeln();
 		}
