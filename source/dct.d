@@ -115,3 +115,19 @@ unittest // check Parseval's identity
 		assert(abs(norm(block) - norm(rec)) < 10e-5);
 	}
 }
+
+unittest // check DC 2D
+{
+	const N2 = 64;
+	short[N2] block;
+	auto reference = new real[N2];
+
+	block[0] = 64;
+	fill(reference, 8.0);
+	auto orig = block;
+
+	idct_2d!8(block);
+
+	auto err = norm(block, reference);
+	assert(err < 10e-5);
+}

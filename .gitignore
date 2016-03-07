@@ -8,3 +8,4 @@ cdist
 dub.selections.json
 project.sublime-workspace
 mpeg2
+*.yuv

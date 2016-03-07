@@ -39,21 +39,18 @@ class Plane
 	}
 }
 
-short[64] ZSCAN = [
-
-];
-
 class Frame
 {
 	Plane[3] planes; // YUV
 
 	uint dts;
 	uint pts;
-	uint mba = -1;
+	uint previous_macroblock_address = -1;
 	size_t width;
 	size_t height;
 	SequenceInfo si;
 	PictureHeader ph;
+	short[3] dct_pred;
 
 	this(size_t width, size_t height, PictureHeader ph)
 	{
@@ -81,9 +78,16 @@ class Frame
 	void process(const ref MacroBlock mb)
 	{
 		//writef("mb.incr: %d MBA: %d cbp: %d ", mb.incr, next_mb - 1, mb.coded_block_pattern);
-		mba += mb.incr;
+		auto mba = previous_macroblock_address + mb.incr;
+		previous_macroblock_address = mba;
 		//mb.dump2(next_mb, false);
 		//mb.dump();
+
+		if(ph.picture_coding_type == PictureType.I
+			&& (!mb.p.intra || mb.incr > 1))
+		{
+			reset_dc_predictors();
+		}
 
 		int y0 = (mba / height_in_mb) * MACROBLOCK_SIZE;
 		int x0 = (mba % height_in_mb) * MACROBLOCK_SIZE;
@@ -93,6 +97,14 @@ class Frame
 			if(bi>=4) break; // TODO: process chroma blocks
 			short[64] block;
 			block = reorder_coefs(b.coeffs, ph.alternate_scan);
+
+			uint cc = (bi < 4)? 0 : ((bi - 4) % 2 + 1);
+
+			assert(cc == 0);
+
+			block[0] += dct_pred[cc];
+			dct_pred[cc] = block[0];
+
 			iquant(block, bi, mb);
 			idct_annexA(block);
 
@@ -102,10 +114,27 @@ class Frame
 			{
 				for(int j=0; j<8; ++j)
 				{
-					plane[x0 + j, y0 + i] = block[i * 8 + j];
+					if(block[i * 8 + j] < 0) writefln("coef: %s", block[i * 8 + j]);
+					assert(block[i * 8 + j] >= 0);
+					assert(block[i * 8 + j] < 256);
+					plane[x0 + j + bi % 2, y0 + i + bi / 2] = block[i * 8 + j];
 				}
 			}
 		}
+	}
+
+	private void reset_dc_predictors()
+	{
+		foreach(i; 0..3)
+		{
+			dct_pred[i] = DCT_PRED_DEFAULT[ph.intra_dc_precision];
+		}
+	}
+
+	void process_new_slice(Slice s)
+	{
+		reset_dc_predictors();
+		previous_macroblock_address = (s.slice_vert_pos - 1) * width_in_mb - 1;
 	}
 
 	private short[64] reorder_coefs(short[64] c, int scan_id)
@@ -157,12 +186,19 @@ enum PictureStructure
 	Frame       = 3,
 }
 
+enum PictureType
+{
+	I = 1,
+	P = 2,
+	B = 3,
+}
+
 struct PictureHeader
 {
 	SequenceInfo si;
 
 	uint temporal_reference;
-	ubyte picture_coding_type;
+	PictureType picture_coding_type;
 	uint vbv_delay;
 
 	ubyte[2][2] f_code;
@@ -194,7 +230,7 @@ struct PictureHeader
 	void parse(BitstreamReader bs)
 	{
 		temporal_reference = bs.read_u(10);
-		picture_coding_type = bs.read_b(3);
+		picture_coding_type = cast(PictureType) bs.read_b(3);
 		vbv_delay = bs.read_u(16);
 
 		if(picture_coding_type == 2 || picture_coding_type == 3)
@@ -250,9 +286,9 @@ struct PictureHeader
 		string pictype;
 		final switch(picture_coding_type)
 		{
-			case 0b01: pictype = "I"; break;
-			case 0b10: pictype = "P"; break;
-			case 0b11: pictype = "B"; break;
+			case PictureType.I: pictype = "I"; break;
+			case PictureType.P: pictype = "P"; break;
+			case PictureType.B: pictype = "B"; break;
 		}
 
 		string picstruct;
@@ -645,6 +681,8 @@ class Decoder
 
 		s.parse(bs, start_code);
 		//s.dump();
+
+		frame.process_new_slice(s);
 
 		do {
 			auto mb = MacroBlock(s);

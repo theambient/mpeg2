@@ -6,6 +6,7 @@ import std.exception;
 import std.typecons;
 import std.string;
 import bitstream;
+import decoder;
 
 private alias VlcTableEntry = Tuple!(uint, uint);
 private alias VlcTable = immutable VlcTableEntry[];
@@ -93,7 +94,7 @@ public ubyte read_mb_inc(BitstreamReader bs)
 }
 
 // Tables B.2 - B.8
-public uint read_mb_type(BitstreamReader bs, ubyte picture_coding_type)
+public uint read_mb_type(BitstreamReader bs, PictureType picture_coding_type)
 {
 	static VlcTable table2 = [
 		tuple(0b1 << 1, 1),
@@ -147,13 +148,13 @@ public uint read_mb_type(BitstreamReader bs, ubyte picture_coding_type)
 	uint tmp;
 	final switch(picture_coding_type)
 	{
-		case 1: // I
+		case PictureType.I:
 			v = bs.read_vlc!2(table2);
 			break;
-		case 2: // P
+		case PictureType.P:
 			v = bs.read_vlc!6(table3);
 			break;
-		case 3: // B
+		case PictureType.B:
 			tmp = bs.nextbits(4);
 			auto t = table4_first[tmp];
 			if(t[2] != -1)
