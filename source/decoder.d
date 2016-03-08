@@ -104,22 +104,18 @@ class Frame
 			reset_dc_predictors();
 		}
 
+		uint bx = (mba % width_in_mb) * MACROBLOCK_SIZE;
+		uint by = (mba / width_in_mb) * MACROBLOCK_SIZE;
 
-		foreach(uint bi, b; mb.blocks)
+		foreach(uint bi; 0..mb.block_count)
 		{
-			int y0 = (mba / width_in_mb) * MACROBLOCK_SIZE + (bi % 2) * 8;
-			int x0 = (mba % width_in_mb) * MACROBLOCK_SIZE + (bi / 2) * 8;
+			uint cc = (bi < 4)? 0 : ((bi & 1) + 1);
 
-			if(bi>=4) break; // TODO: process chroma blocks
 			short[64] block;
 
 			//dump_block(b.coeffs, mba, bi);
 
-			block = reorder_coefs(b.coeffs, ph.alternate_scan);
-
-			uint cc = (bi < 4)? 0 : ((bi - 4) % 2 + 1);
-
-			assert(cc == 0);
+			block = reorder_coefs(mb.blocks[bi].coeffs, ph.alternate_scan);
 
 			block[0] += dct_pred[cc];
 			dct_pred[cc] = block[0];
@@ -129,19 +125,54 @@ class Frame
 			idct_annexA(block);
 			//dump_block(block, mba, bi, " (rec samples)");
 
-			auto plane = planes[0];
+			add_block(block, cc, bi, bx, by);
+		}
+
+	}
+
+	void add_block(const ref short[64] block, uint cc, uint comp, uint bx, uint by)
+	{
+		auto plane = planes[cc];
+
+		if(cc == 0 || ph.si.chroma_format == ChromaFormat.C444)
+		{
+			int cx = (comp % 2) * 8;
+			int cy = (comp / 2) * 8;
 
 			for(int i=0; i<8; ++i)
 			{
 				for(int j=0; j<8; ++j)
 				{
-					if(block[i * 8 + j] + 128 < 0)
-					{
-						writefln("(%d, %d) negative sample: %s", x0, y0, block[i * 8 + j] + 128);
-					}
-					//assert(block[i * 8 + j] >= 0);
-					//assert(block[i * 8 + j] < 256);
-					plane[x0 + j, y0 + i] = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + 128);
+					plane[bx + cx + j, by + cy + i] = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + 128);
+				}
+			}
+		}
+		else if(ph.si.chroma_format == ChromaFormat.C420)
+		{
+			for(int i=0; i<8; ++i)
+			{
+				for(int j=0; j<8; ++j)
+				{
+					const auto v = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + 128);
+
+					plane[bx + 2 * j    , by + 2 * i    ] = v;
+					plane[bx + 2 * j + 1, by + 2 * i    ] = v;
+					plane[bx + 2 * j    , by + 2 * i + 1] = v;
+					plane[bx + 2 * j + 1, by + 2 * i + 1] = v;
+				}
+			}
+		}
+		else if(ph.si.chroma_format == ChromaFormat.C422)
+		{
+			int cy = (comp / 2) * 8;
+
+			for(int i=0; i<8; ++i)
+			{
+				for(int j=0; j<8; ++j)
+				{
+					const auto v = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + 128);
+					plane[bx + 0 + j, by + cy + i] = v;
+					plane[bx + 8 + j, by + cy + i] = v;
 				}
 			}
 		}
@@ -305,6 +336,8 @@ struct PictureHeader
 			burst_amplitude = bs.read_b(7);
 			sub_carrier_phase = bs.read_b(8);
 		}
+
+		enforce(!concealment_motion_vectors, "concealment_motion_vectors are not implemented");
 	}
 
 	void dump()

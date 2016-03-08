@@ -35,9 +35,24 @@ class App
 			buf[i] = cast(ubyte)f.planes[0][i % f.width, i / f.width];
 		}
 
-		for(size_t i=0; i<f.width*f.height / 2; ++i)
+		foreach(cc; 1..3)
 		{
-			buf[f.width*f.height + i] = 128;
+			auto base = f.width*f.height + (cc == 1?0:f.width*f.height / 4);
+
+			for(size_t i=0; i<f.height / 2; ++i)
+			{
+				for(size_t j=0; j<f.width / 2; ++j)
+				{
+					auto v = (0L
+						+ f.planes[cc][2*j, 2*i]
+						+ f.planes[cc][2*j + 1, 2*i]
+						+ f.planes[cc][2*j, 2*i + 1]
+						+ f.planes[cc][2*j + 1, 2*i + 1]
+						) / 4;
+
+					buf[base + i * f.width / 2 + j] = cast(ubyte) v;
+				}
+			}
 		}
 
 		out_fd.rawWrite(buf);
