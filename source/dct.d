@@ -4,6 +4,7 @@ module dct;
 import std.math;
 import std.algorithm;
 import math;
+import des.ts;
 
 ref const(T[N][N]) DCT_MATRIX(T, uint N)()
 {
@@ -70,36 +71,52 @@ void idct_2d(uint N)(ref short[N*N] block)
 	}
 }
 
+void idct_2da(uint N, T = float)(ref short[N*N] block)
+{
+	T[N*N] rec;
+
+	// rows
+	for(uint i=0; i<N; ++i)
+	{
+		for(uint x=0; x<N; ++x)
+		{
+			T sum = 0;
+
+			for(uint k=0; k<N; ++k)
+			{
+				sum += block[i*N + k]
+					 * DCT_MATRIX!(T,N)()[x][k];
+			}
+
+			rec[i * N + x] = sum;
+		}
+	}
+
+	// columns
+	for(uint j=0; j<N; ++j)
+	{
+		for(uint x=0; x<N; ++x)
+		{
+			T sum = 0;
+
+			for(uint k=0; k<N; ++k)
+			{
+				sum += rec[k*N + j]
+					 * DCT_MATRIX!(T,N)()[x][k];
+			}
+
+			block[x * N + j] = cast(short) round(sum * 2.0 / N);
+		}
+	}
+}
+
 void idct_annexA(ref short[64] block)
 {
-	idct_2d!8(block);
+	idct_2da!8(block);
 	foreach(i, v; block)
 	{
 		block[i] = saturate!(short,-256,255)(v);
 	}
-}
-
-real norm(V,U)(V[] v, U[] u)
-{
-	real sum = 0;
-	for(size_t i=0; i<v.length; ++i)
-	{
-		auto t = v[i] - u[i];
-		sum += t*t;
-	}
-
-	return sqrt(sum) / v.length;
-}
-
-real norm(V)(V[] v)
-{
-	real sum = 0;
-	for(size_t i=0; i<v.length; ++i)
-	{
-		sum += v[i] * v[i];
-	}
-
-	return sum;
 }
 
 unittest // check DC
@@ -114,7 +131,7 @@ unittest // check DC
 	idct_1d!8(block, rec, 1);
 
 	auto err = norm(rec, reference);
-	assert(err < 10e-5);
+	assertEqApprox(err, 0, 10e-5);
 }
 
 unittest // check Parseval's identity
@@ -130,7 +147,7 @@ unittest // check Parseval's identity
 
 		idct_1d!N(block, rec, 1);
 
-		assert(abs(norm(block) - norm(rec)) < 10e-5);
+		assertEqApprox(norm(block), norm(rec), 10e-5);
 	}
 }
 
@@ -147,5 +164,22 @@ unittest // check DC 2D
 	idct_2d!8(block);
 
 	auto err = norm(block, reference);
-	assert(err < 10e-5);
+	assertEqApprox(err, 0, 10e-5);
+}
+
+unittest // check idct2da
+{
+	const N2 = 64;
+	short[N2] block;
+	auto reference = new real[N2];
+
+	block[0] = 64;
+	fill(reference, 8.0);
+	auto orig = block;
+	auto block2 = block;
+
+	idct_2d!8(block);
+	idct_2da!8(block2);
+
+	assertEq(block, block2);
 }
