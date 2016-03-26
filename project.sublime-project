@@ -9,7 +9,7 @@
 	[
 		{
 			"name": "this: mpeg2dec",
-			"cmd": ["dub", "build"],
+			"cmd": ["dub", "build", "-b", "unittest"],
 			"file_regex": "^(.*?)\\(([0-9]+),[0-9]+\\)",
 			"working_dir" : "$project_path",
 			"selector": "source.d",

@@ -5,10 +5,32 @@ import std.math;
 import std.algorithm;
 import math;
 
-void idct_1d(uint N,I,O)(I[] block, O[] rec)
+ref const(T[N][N]) DCT_MATRIX(T, uint N)()
+{
+	static T[N][N] instance;
+	static bool initialized = false;
+
+	auto C(uint k){ return (k == 0) ? 1.0/SQRT2: 1;}
+
+	if(!initialized)
+	{
+		foreach(x; 0..N)
+		{
+			foreach(k; 0..N)
+			{
+				instance[x][k] = C(k) * cos((x + 0.5) / N * k * PI);
+			}
+		}
+
+		initialized = true;
+	}
+
+	return instance;
+}
+
+void idct_1d(uint N,I,O)(I[] block, O[] rec, uint stride)
 {
 	const N2 = 2 * N;
-	O C(uint k){ return (k == 0) ? 1.0/SQRT2: 1;}
 
 	for(uint i=0; i<N; ++i)
 	{
@@ -16,39 +38,35 @@ void idct_1d(uint N,I,O)(I[] block, O[] rec)
 
 		for(uint k=0; k<N; ++k)
 		{
-			sum += C(k) * block[k] * cos((i + 0.5) / N * k * PI);
+			sum += block[k * stride]
+				//* C(k) * mycos((i + 0.5) / N * k * PI);
+				 * DCT_MATRIX!(O,N)()[i][k];
 		}
 
-		rec[i] = sum * sqrt(2.0 / N);
+		rec[i * stride] = sum * sqrt(2.0 / N);
 	}
 }
 
 void idct_2d(uint N)(ref short[N*N] block)
 {
 	real[N*N] rec;
+	real[N*N] rec2;
 
 	// rows
 	for(uint i=0; i<N; ++i)
 	{
-		idct_1d!N(block[i*N ..(i+1)*N], rec[i*N ..(i+1)*N]);
+		idct_1d!N(block[i*N ..(i+1)*N], rec[i*N ..(i+1)*N], 1);
 	}
 
 	// columns
 	for(uint j=0; j<N; ++j)
 	{
-		real[N] tmp;
-		real[N] tmp_rec;
-		for(uint i=0; i<N; ++i)
-		{
-			tmp[i] = rec[i*N + j];
-		}
+		idct_1d!N(rec[j..$], rec2[j..$], N);
+	}
 
-		idct_1d!N(tmp, tmp_rec);
-
-		for(uint i=0; i<N; ++i)
-		{
-			block[i*N + j] = cast(short) round(tmp_rec[i]);
-		}
+	for(uint i=0; i<N*N; ++i)
+	{
+		block[i] = cast(short) round(rec2[i]);
 	}
 }
 
@@ -93,7 +111,7 @@ unittest // check DC
 	block[0] = 8;
 	fill(reference, 8.0/sqrt(8.0));
 
-	idct_1d!8(block, rec);
+	idct_1d!8(block, rec, 1);
 
 	auto err = norm(rec, reference);
 	assert(err < 10e-5);
@@ -110,7 +128,7 @@ unittest // check Parseval's identity
 		auto block = uniformDistribution(N);
 		real[N] rec;
 
-		idct_1d!N(block, rec);
+		idct_1d!N(block, rec, 1);
 
 		assert(abs(norm(block) - norm(rec)) < 10e-5);
 	}
