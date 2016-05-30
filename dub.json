@@ -9,6 +9,7 @@
 
 	"dependencies":
 	{
-		"dests": "~>0.3.0"
+		"dests": "~>0.3.0",
+		"darg": "~>0.0.4"
 	}
 }

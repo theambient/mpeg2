@@ -1,23 +1,40 @@
 
+import darg;
 import std.stdio;
 import std.exception;
 import decoder;
+
+struct Options
+{
+	@Option("help", "h")
+	@Help("Prints this help.")
+	OptionFlag help;
+
+	@Option("frames", "f")
+	@Help("Number of frames to decode.")
+	size_t frames_to_decode = size_t.max;
+
+	@Argument("<input-file>")
+	@Help("Input file")
+	string input_file;
+
+	@Argument("<output-file>")
+	@Help("Output file")
+	string output_file;
+}
 
 class App
 {
 	void run(string[] args)
 	{
-		enforce(args.length == 3, "usage: <input-file> <output-file>");
+		auto options = parseArgs!Options(args[1..$]);
 
-		string input_file = args[1];
-		string output_file = args[2];
+		out_fd = File(options.output_file, "wb");
 
-		out_fd = File(output_file, "wb");
-
-		auto decoder = new Decoder(input_file);
+		auto decoder = new Decoder(options.input_file);
 
 		int cnt = 0;
-		for(Frame f = decoder.decode(); f !is null && cnt < 1; f = decoder.decode())
+		for(Frame f = decoder.decode(); f !is null && cnt < options.frames_to_decode; f = decoder.decode())
 		{
 			writefln("decoded pic #%d", cnt);
 			dump_frame(f);
@@ -61,8 +78,28 @@ class App
 	private File out_fd;
 }
 
-void main(string[] args)
+int main(string[] args)
 {
-	auto app = new App;
-	app.run(args);
+	immutable usage = usageString!Options("example");
+	immutable help = helpString!Options;
+
+	try
+	{
+		auto app = new App;
+		app.run(args);
+		return 0;
+	}
+	catch (ArgParseError e)
+	{
+		writeln(e.msg);
+		writeln(usage);
+		return 1;
+	}
+	catch (ArgParseHelp e)
+	{
+		// Help was requested
+		writeln(usage);
+		write(help);
+		return 0;
+	}
 }
