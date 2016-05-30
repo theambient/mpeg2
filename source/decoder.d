@@ -12,6 +12,7 @@ import vlc;
 import macroblock;
 import matrix;
 import dct;
+import fast_dct;
 import math;
 
 const MACROBLOCK_SIZE = 16;
@@ -141,7 +142,7 @@ class FrameBuilder
 
 			iquant(block, bi, mb);
 			//dump_block(block, mba, bi, " (dct)");
-			idct_annexA(block);
+			fast_idct_annexA(block);
 			//dump_block(block, mba, bi, " (rec samples)");
 
 			add_block(block, cc, bi, bx, by);
