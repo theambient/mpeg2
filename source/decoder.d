@@ -45,19 +45,13 @@ class Frame
 
 	uint dts;
 	uint pts;
-	int previous_macroblock_address = -1;
 	size_t width;
 	size_t height;
-	SequenceInfo si;
-	PictureHeader ph;
-	short[3] dct_pred;
 
-	this(size_t width, size_t height, PictureHeader ph)
+	this(size_t width, size_t height)
 	{
 		this.width = width;
 		this.height = height;
-		this.si = si;
-		this.ph = ph;
 
 		foreach(i; 0..3)
 		{
@@ -90,6 +84,20 @@ class Frame
 		}
 		writeln();
 	}
+}
+
+class FrameBuilder
+{
+	int previous_macroblock_address = -1;
+	PictureHeader ph;
+	short[3] dct_pred;
+	Frame frame;
+
+	this(PictureHeader ph)
+	{
+		this.ph = ph;
+		frame = new Frame(ph.si.width, ph.si.height);
+	}
 
 	void process(const ref MacroBlock mb)
 	{
@@ -103,9 +111,8 @@ class Frame
 		{
 			reset_dc_predictors();
 		}
-
-		uint bx = (mba % width_in_mb) * MACROBLOCK_SIZE;
-		uint by = (mba / width_in_mb) * MACROBLOCK_SIZE;
+		uint bx = (mba % frame.width_in_mb) * MACROBLOCK_SIZE;
+		uint by = (mba / frame.width_in_mb) * MACROBLOCK_SIZE;
 
 		foreach(uint bi; 0..mb.block_count)
 		{
@@ -132,7 +139,7 @@ class Frame
 
 	void add_block(const ref short[64] block, uint cc, uint comp, uint bx, uint by)
 	{
-		auto plane = planes[cc];
+		auto plane = frame.planes[cc];
 
 		if(cc == 0 || ph.si.chroma_format == ChromaFormat.C444)
 		{
@@ -190,7 +197,7 @@ class Frame
 	void process_new_slice(Slice s)
 	{
 		reset_dc_predictors();
-		previous_macroblock_address = int(s.slice_vert_pos * width_in_mb) - 1;
+		previous_macroblock_address = int(s.slice_vert_pos * frame.width_in_mb) - 1;
 	}
 
 	private short[64] reorder_coefs(short[64] c, int scan_id)
@@ -210,7 +217,7 @@ class Frame
 	private void iquant(ref short[64] b, ulong c, const ref MacroBlock mb)
 	{
 		auto quantiser_scale = QUANTISER_SCALE_MATRIX[ph.q_scale_type][mb.s.quantiser_scale_code];
-		int cc = si.chroma_format == ChromaFormat.C420? 0: (c >= 4);
+		int cc = ph.si.chroma_format == ChromaFormat.C420? 0: (c >= 4);
 		int w = (mb.p.intra? 0: 1) + 2 * cc;
 
 		b[0] *=  INTRA_DC_MULT[ph.intra_dc_precision];
@@ -250,7 +257,7 @@ enum PictureType
 	B = 3,
 }
 
-struct PictureHeader
+class PictureHeader
 {
 	SequenceInfo si;
 
@@ -431,7 +438,7 @@ ChromaFormat parse_chroma_format(ubyte b)
 	}
 }
 
-struct SequenceInfo
+class SequenceInfo
 {
 	int width;
 	int height;
@@ -644,16 +651,18 @@ class Decoder
 
 	private void _maybe_flush_picture()
 	{
-		if(frame !is null)
+		if(frame_builder !is null)
 		{
-			_frames ~= frame;
-			frame = null;
+			_frames ~= frame_builder.frame;
+			frame_builder = null;
 		}
 	}
 
 	private void _parse_sequence_header(ubyte start_code)
 	{
 		_maybe_flush_picture();
+
+		si = new SequenceInfo;
 
 		si.width = bs.read_u(12);
 		si.height = bs.read_u(12);
@@ -741,7 +750,7 @@ class Decoder
 		s.parse(bs, start_code);
 		//s.dump();
 
-		frame.process_new_slice(s);
+		frame_builder.process_new_slice(s);
 
 		do {
 			auto mb = MacroBlock(s);
@@ -749,15 +758,16 @@ class Decoder
 			mb.parse(bs);
 			auto newp = bs.bits_read;
 			//writefln("mb: %d -> %d (%d)", oldp, newp, newp - oldp);
-			frame.process(mb);
+			frame_builder.process(mb);
 		} while( bs.nextbits(23) != 0);
 	}
 
 	private void _parse_picture_header(ubyte start_code)
 	{
 		_maybe_flush_picture();
+		ph = new PictureHeader(si);
 		ph.parse(bs);
-		frame = new Frame(si.width, si. height, ph);
+		frame_builder = new FrameBuilder(ph);
 	}
 
 	private void _parse_extension_and_user_data(int i)
@@ -805,7 +815,7 @@ class Decoder
 	private SequenceInfo si;
 	private GopInfo gopi;
 	private PictureHeader ph;
-	private Frame frame;
+	private FrameBuilder frame_builder;
 	private Frame[] _frames;
 }
 

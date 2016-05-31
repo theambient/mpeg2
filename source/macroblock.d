@@ -210,7 +210,7 @@ struct MacroBlock
 		}
 	}
 
-	PredictionInfo predinfo()
+	PredictionInfo predinfo() const
 	{
 		if(s.ph.picture_structure == PictureStructure.Frame)
 		{
