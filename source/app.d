@@ -39,6 +39,7 @@ class App
 			writefln("decoded pic #%d", cnt);
 			dump_frame(f);
 			++cnt;
+			if(cnt == options.frames_to_decode) break; // to avoid one extra frame decoding
 		}
 
 		writefln("decoded %d frames", cnt);
