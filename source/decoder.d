@@ -2,9 +2,10 @@
 module decoder;
 
 import std.array;
+import std.exception;
+import std.math;
 import std.stdio;
 import std.string;
-import std.exception;
 import stdint;
 import bitstream;
 import vlc;
@@ -14,6 +15,7 @@ import dct;
 import math;
 
 const MACROBLOCK_SIZE = 16;
+const ZERO_MV = (short[2]).init;
 
 class Plane
 {
@@ -91,20 +93,30 @@ class FrameBuilder
 	int previous_macroblock_address = -1;
 	PictureHeader ph;
 	short[3] dct_pred;
+	short[2][2][2] PMV;
 	Frame frame;
+	Frame[] dpb;
 
-	this(PictureHeader ph)
+	this(PictureHeader ph, Frame[] dpb)
 	{
 		this.ph = ph;
+		this.dpb = dpb;
 		frame = new Frame(ph.si.width, ph.si.height);
 	}
 
 	void process(const ref MacroBlock mb)
 	{
+		if(mb.incr > 1)
+		{
+			process_skipped_mbs(mb.incr - 1);
+		}
+
 		int mba = previous_macroblock_address + mb.incr;
 		previous_macroblock_address = mba;
 		//mb.dump2(mba, true);
 		//mb.dump();
+
+		motion_compensate(mb);
 
 		if(ph.picture_coding_type == PictureType.I
 			&& (!mb.p.intra || mb.incr > 1))
@@ -137,9 +149,140 @@ class FrameBuilder
 
 	}
 
+	private void process_skipped_mbs(int num)
+	{
+		if(ph.picture_coding_type == PictureType.P)
+		{
+			reset_mv_predictors();
+			for(int s = previous_macroblock_address + 1; s<previous_macroblock_address + num + 1; ++s)
+			{
+				apply_mv(s, ZERO_MV);
+			}
+		}
+	}
+
+	private void motion_compensate(const ref MacroBlock mb)
+	{
+		enforce(mb.predinfo.type == PredictionType.Frame);
+		enforce(mb.predinfo.mv_format == MvFormat.Frame);
+		enforce(mb.predinfo.dmv == false);
+
+		if(ph.picture_coding_type == PictureType.P && mb.p.motion_forward == false)
+		{
+			apply_mv(previous_macroblock_address, ZERO_MV);
+			reset_mv_predictors();
+			return;
+		}
+
+		foreach(r; 0..mb.predinfo.motion_vector_count)
+		{
+			if(mb.p.motion_forward)
+			{
+				motion_compensate(mb, r, 0);
+			}
+			if(mb.p.motion_backward)
+			{
+				motion_compensate(mb, r, 1);
+			}
+		}
+	}
+
+	void motion_compensate(const ref MacroBlock mb, int r, int s)
+	{
+		foreach(t; 0..2)
+		{
+			auto r_size = ph.f_code[s][t] - 1;
+			auto f = (1 << r_size);
+			auto high = 16 * f - 1;
+			auto low = -16 * f;
+			auto range = 32 * f;
+
+			short delta;
+			if(f == 1 || mb.motion_code[r][s][t] == 0)
+			{
+				delta = mb.motion_code[r][s][t];
+			}
+			else
+			{
+				delta = cast(short)(((abs(mb.motion_code[r][s][t]) - 1) * f) + mb.motion_residual[r][s][t] + 1);
+				if (mb.motion_code[r][s][t] < 0)
+					delta = -delta;
+			}
+
+			short prediction = PMV[r][s][t];
+
+			auto v = cast(short)(prediction + delta);
+			if(v < low) v += range;
+			if(v > high) v -= range;
+
+			PMV[r][s][t] = v;
+		}
+
+		// form block prediction
+
+		int mba = previous_macroblock_address;
+
+		apply_mv(mba, PMV[r][s]);
+	}
+
+	private void apply_mv(int mba, const ref short[2] mv)
+	{
+		enforce(dpb.length > 0);
+		auto rf = dpb.back;
+
+		uint bx = (mba % frame.width_in_mb) * MACROBLOCK_SIZE;
+		uint by = (mba / frame.width_in_mb) * MACROBLOCK_SIZE;
+		//writefln("mv[%s][%s][%d][%d]: %d %d", bx, by, r, s, mvx1, mvy1);
+
+		/*
+		short scalex, scaley;
+
+		final switch(ph.si.chroma_format)
+		{
+			case  ChromaFormat.C444:
+				scaley = 1;
+				scaley = 1;
+				break;
+			case ChromaFormat.C422:
+				scalex = 1;
+				scaley = 2;
+				break;
+			case ChromaFormat.C420:
+				scalex = 2;
+				scaley = 2;
+				break;
+		}
+
+		mvx1 /= scalex;
+		mvx2 /= scalex;
+		mvy1 /= scaley;
+		mvy2 /= scaley;
+		*/
+
+		short[2] mv1 = mv[] / 2;
+		short[2] mv2 = mv1[] + mv[] % 2;
+
+		foreach(cc; 0..3)
+		{
+			for(int y=by; y<by + 16; ++y)
+			{
+				for(int x=bx; x<bx + 16; ++x)
+				{
+					const auto v = (rf.planes[cc][x + mv1[0], y + mv1[1]] + rf.planes[cc][x + mv2[0], y + mv2[1]]) / 2;
+					frame.planes[cc][x, y] += v;
+				}
+			}
+		}
+	}
+
 	void add_block(const ref short[64] block, uint cc, uint comp, uint bx, uint by)
 	{
 		auto plane = frame.planes[cc];
+		short base = 0;
+		if(ph.picture_coding_type == PictureType.I)
+		{
+			base = 128;
+		}
 
 		if(cc == 0 || ph.si.chroma_format == ChromaFormat.C444)
 		{
@@ -150,7 +293,7 @@ class FrameBuilder
 			{
 				for(int j=0; j<8; ++j)
 				{
-					plane[bx + cx + j, by + cy + i] = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + 128);
+					plane[bx + cx + j, by + cy + i] += cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + base);
 				}
 			}
 		}
@@ -160,12 +303,12 @@ class FrameBuilder
 			{
 				for(int j=0; j<8; ++j)
 				{
-					const auto v = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + 128);
+					const auto v = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + base);
 
-					plane[bx + 2 * j    , by + 2 * i    ] = v;
-					plane[bx + 2 * j + 1, by + 2 * i    ] = v;
-					plane[bx + 2 * j    , by + 2 * i + 1] = v;
-					plane[bx + 2 * j + 1, by + 2 * i + 1] = v;
+					plane[bx + 2 * j    , by + 2 * i    ] += v;
+					plane[bx + 2 * j + 1, by + 2 * i    ] += v;
+					plane[bx + 2 * j    , by + 2 * i + 1] += v;
+					plane[bx + 2 * j + 1, by + 2 * i + 1] += v;
 				}
 			}
 		}
@@ -177,9 +320,9 @@ class FrameBuilder
 			{
 				for(int j=0; j<8; ++j)
 				{
-					const auto v = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + 128);
-					plane[bx + 0 + j, by + cy + i] = v;
-					plane[bx + 8 + j, by + cy + i] = v;
+					const auto v = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + base);
+					plane[bx + 0 + j, by + cy + i] += v;
+					plane[bx + 8 + j, by + cy + i] += v;
 				}
 			}
 		}
@@ -192,6 +335,11 @@ class FrameBuilder
 			//dct_pred[i] = DCT_PRED_DEFAULT[ph.intra_dc_precision];
 			dct_pred[i] = 0;
 		}
+	}
+
+	private void reset_mv_predictors()
+	{
+		PMV = PMV.init;
 	}
 
 	void process_new_slice(Slice s)
@@ -654,6 +802,11 @@ class Decoder
 		if(frame_builder !is null)
 		{
 			_frames ~= frame_builder.frame;
+			dpb ~= frame_builder.frame;
+			if(dpb.length > 2)
+			{
+				dpb = dpb[$-2..$];
+			}
 			frame_builder = null;
 		}
 	}
@@ -767,7 +920,7 @@ class Decoder
 		_maybe_flush_picture();
 		ph = new PictureHeader(si);
 		ph.parse(bs);
-		frame_builder = new FrameBuilder(ph);
+		frame_builder = new FrameBuilder(ph, dpb);
 	}
 
 	private void _parse_extension_and_user_data(int i)
@@ -817,6 +970,7 @@ class Decoder
 	private PictureHeader ph;
 	private FrameBuilder frame_builder;
 	private Frame[] _frames;
+	private Frame[] dpb;
 }
 
 enum ExpectedExtension
