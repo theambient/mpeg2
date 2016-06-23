@@ -42,7 +42,7 @@ class Plane
 	}
 }
 
-class Frame
+class Picture
 {
 	Plane[3] planes; // YUV
 
@@ -89,20 +89,20 @@ class Frame
 	}
 }
 
-class FrameBuilder
+class PictureBuilder
 {
 	int previous_macroblock_address = -1;
 	PictureHeader ph;
 	short[3] dct_pred;
 	short[2][2][2] PMV;
-	Frame frame;
-	Frame[] dpb;
+	Picture pic;
+	Picture[] dpb;
 
-	this(PictureHeader ph, Frame[] dpb)
+	this(PictureHeader ph, Picture[] dpb)
 	{
 		this.ph = ph;
 		this.dpb = dpb;
-		frame = new Frame(ph.si.width, ph.si.height);
+		this.pic = new Picture(ph.si.width, ph.si.height);
 	}
 
 	void process(const ref MacroBlock mb)
@@ -124,8 +124,8 @@ class FrameBuilder
 		{
 			reset_dc_predictors();
 		}
-		uint bx = (mba % frame.width_in_mb) * MACROBLOCK_SIZE;
-		uint by = (mba / frame.width_in_mb) * MACROBLOCK_SIZE;
+		uint bx = (mba % pic.width_in_mb) * MACROBLOCK_SIZE;
+		uint by = (mba / pic.width_in_mb) * MACROBLOCK_SIZE;
 
 		foreach(uint bi; 0..mb.block_count)
 		{
@@ -231,8 +231,8 @@ class FrameBuilder
 		enforce(dpb.length > 0);
 		auto rf = dpb.back;
 
-		uint bx = (mba % frame.width_in_mb) * MACROBLOCK_SIZE;
-		uint by = (mba / frame.width_in_mb) * MACROBLOCK_SIZE;
+		uint bx = (mba % pic.width_in_mb) * MACROBLOCK_SIZE;
+		uint by = (mba / pic.width_in_mb) * MACROBLOCK_SIZE;
 		//writefln("mv[%s][%s][%d][%d]: %d %d", bx, by, r, s, mvx1, mvy1);
 
 		/*
@@ -270,7 +270,7 @@ class FrameBuilder
 				for(int x=bx; x<bx + 16; ++x)
 				{
 					const auto v = (rf.planes[cc][x + mv1[0], y + mv1[1]] + rf.planes[cc][x + mv2[0], y + mv2[1]]) / 2;
-					frame.planes[cc][x, y] += v;
+					pic.planes[cc][x, y] += v;
 				}
 			}
 		}
@@ -278,7 +278,7 @@ class FrameBuilder
 
 	void add_block(const ref short[64] block, uint cc, uint comp, uint bx, uint by)
 	{
-		auto plane = frame.planes[cc];
+		auto plane = pic.planes[cc];
 		short base = 0;
 		if(ph.picture_coding_type == PictureType.I)
 		{
@@ -346,7 +346,7 @@ class FrameBuilder
 	void process_new_slice(Slice s)
 	{
 		reset_dc_predictors();
-		previous_macroblock_address = int(s.slice_vert_pos * frame.width_in_mb) - 1;
+		previous_macroblock_address = int(s.slice_vert_pos * pic.width_in_mb) - 1;
 	}
 
 	private short[64] reorder_coefs(short[64] c, int scan_id)
@@ -734,21 +734,21 @@ class Decoder
 		this.bs = new BitstreamReader(content);
 	}
 
-	Frame decode()
+	Picture decode()
 	{
-		while(!bs.eof && !_frame_ready())
+		while(!bs.eof && !_picture_ready())
 		{
 			_read_syntax_element();
 			//_process_syntax_element(se);
 		}
 
-		if(_frames.length == 0)
+		if(_pics.length == 0)
 		{
 			return null;
 		}
 
-		auto f = _frames[0];
-		_frames.popFront();
+		auto f = _pics[0];
+		_pics.popFront();
 		return f;
 	}
 
@@ -800,15 +800,15 @@ class Decoder
 
 	private void _maybe_flush_picture()
 	{
-		if(frame_builder !is null)
+		if(picture_builder !is null)
 		{
-			_frames ~= frame_builder.frame;
-			dpb ~= frame_builder.frame;
+			_pics ~= picture_builder.pic;
+			dpb ~= picture_builder.pic;
 			if(dpb.length > 2)
 			{
 				dpb = dpb[$-2..$];
 			}
-			frame_builder = null;
+			picture_builder = null;
 		}
 	}
 
@@ -904,7 +904,7 @@ class Decoder
 		s.parse(bs, start_code);
 		//s.dump();
 
-		frame_builder.process_new_slice(s);
+		picture_builder.process_new_slice(s);
 
 		do {
 			auto mb = MacroBlock(s);
@@ -912,7 +912,7 @@ class Decoder
 			mb.parse(bs);
 			auto newp = bs.bits_read;
 			//writefln("mb: %d -> %d (%d)", oldp, newp, newp - oldp);
-			frame_builder.process(mb);
+			picture_builder.process(mb);
 		} while( bs.nextbits(23) != 0);
 	}
 
@@ -921,7 +921,7 @@ class Decoder
 		_maybe_flush_picture();
 		ph = new PictureHeader(si);
 		ph.parse(bs);
-		frame_builder = new FrameBuilder(ph, dpb);
+		picture_builder = new PictureBuilder(ph, dpb);
 	}
 
 	private void _parse_extension_and_user_data(int i)
@@ -939,9 +939,9 @@ class Decoder
 		//extension_i = 1;
 	}
 
-	private bool _frame_ready()
+	private bool _picture_ready()
 	{
-		return _frames.length > 0;
+		return _pics.length > 0;
 	}
 
 	private void _init_parsers()
@@ -969,9 +969,9 @@ class Decoder
 	private SequenceInfo si;
 	private GopInfo gopi;
 	private PictureHeader ph;
-	private FrameBuilder frame_builder;
-	private Frame[] _frames;
-	private Frame[] dpb;
+	private PictureBuilder picture_builder;
+	private Picture[] _pics;
+	private Picture[] dpb;
 }
 
 enum ExpectedExtension

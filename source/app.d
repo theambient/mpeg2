@@ -10,9 +10,9 @@ struct Options
 	@Help("Prints this help.")
 	OptionFlag help;
 
-	@Option("frames", "f")
-	@Help("Number of frames to decode.")
-	size_t frames_to_decode = size_t.max;
+	@Option("pictures", "p")
+	@Help("Number of pictures to decode.")
+	size_t pics_to_decode = size_t.max;
 
 	@Argument("<input-file>")
 	@Help("Input file")
@@ -34,41 +34,41 @@ class App
 		auto decoder = new Decoder(options.input_file);
 
 		int cnt = 0;
-		for(Frame f = decoder.decode(); f !is null && cnt < options.frames_to_decode; f = decoder.decode())
+		for(Picture p = decoder.decode(); p !is null && cnt < options.pics_to_decode; p = decoder.decode())
 		{
 			writefln("decoded pic #%d", cnt);
-			dump_frame(f);
+			dump_picture(p);
 			++cnt;
-			if(cnt == options.frames_to_decode) break; // to avoid one extra frame decoding
+			if(cnt == options.pics_to_decode) break; // to avoid one extra Picture decoding
 		}
 
 		writefln("decoded %d frames", cnt);
 	}
 
-	void dump_frame(Frame f)
+	void dump_picture(Picture p)
 	{
-		auto buf = new ubyte[f.width*f.height + f.width*f.height / 2];
-		for(size_t i=0; i<f.width*f.height; ++i)
+		auto buf = new ubyte[p.width*p.height + p.width*p.height / 2];
+		for(size_t i=0; i<p.width*p.height; ++i)
 		{
-			buf[i] = cast(ubyte)f.planes[0][i % f.width, i / f.width];
+			buf[i] = cast(ubyte)p.planes[0][i % p.width, i / p.width];
 		}
 
 		foreach(cc; 1..3)
 		{
-			auto base = f.width*f.height + (cc == 1?0:f.width*f.height / 4);
+			auto base = p.width*p.height + (cc == 1?0:p.width*p.height / 4);
 
-			for(size_t i=0; i<f.height / 2; ++i)
+			for(size_t i=0; i<p.height / 2; ++i)
 			{
-				for(size_t j=0; j<f.width / 2; ++j)
+				for(size_t j=0; j<p.width / 2; ++j)
 				{
 					auto v = (0L
-						+ f.planes[cc][2*j, 2*i]
-						+ f.planes[cc][2*j + 1, 2*i]
-						+ f.planes[cc][2*j, 2*i + 1]
-						+ f.planes[cc][2*j + 1, 2*i + 1]
+						+ p.planes[cc][2*j, 2*i]
+						+ p.planes[cc][2*j + 1, 2*i]
+						+ p.planes[cc][2*j, 2*i + 1]
+						+ p.planes[cc][2*j + 1, 2*i + 1]
 						) / 4;
 
-					buf[base + i * f.width / 2 + j] = cast(ubyte) v;
+					buf[base + i * p.width / 2 + j] = cast(ubyte) v;
 				}
 			}
 		}
