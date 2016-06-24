@@ -48,29 +48,17 @@ class App
 	void dump_picture(Picture p)
 	{
 		auto buf = new ubyte[p.width*p.height + p.width*p.height / 2];
-		for(size_t i=0; i<p.width*p.height; ++i)
-		{
-			buf[i] = cast(ubyte)p.planes[0][i % p.width, i / p.width];
-		}
 
-		foreach(cc; 1..3)
+		uint dc = 0;
+		foreach(cc; 0..3)
 		{
-			auto base = p.width*p.height + (cc == 1?0:p.width*p.height / 4);
+			auto pixs = p.planes[cc].pixels;
 
-			for(size_t i=0; i<p.height / 2; ++i)
+			for(size_t i=0; i<pixs.length; ++i)
 			{
-				for(size_t j=0; j<p.width / 2; ++j)
-				{
-					auto v = (0L
-						+ p.planes[cc][2*j, 2*i]
-						+ p.planes[cc][2*j + 1, 2*i]
-						+ p.planes[cc][2*j, 2*i + 1]
-						+ p.planes[cc][2*j + 1, 2*i + 1]
-						) / 4;
-
-					buf[base + i * p.width / 2 + j] = cast(ubyte) v;
-				}
+				buf[dc + i] = cast(ubyte) pixs[i];
 			}
+			dc += pixs.length;
 		}
 
 		out_fd.rawWrite(buf);

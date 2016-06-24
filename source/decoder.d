@@ -23,12 +23,16 @@ class Plane
 	private short[] _pixels;
 	private size_t _width;
 	private size_t _height;
+	ubyte _scalex;
+	ubyte _scaley;
 
-	this(size_t width, size_t height)
+	this(size_t width, size_t height, ubyte scalex, ubyte scaley)
 	{
 		_width = width;
 		_height = height;
 		_pixels = new short[width * height];
+		_scalex = scalex;
+		_scaley = scaley;
 	}
 
 	ref short opIndex(size_t x, size_t y)
@@ -39,6 +43,21 @@ class Plane
 	short opIndex(size_t x, size_t y) const
 	{
 		return _pixels[y * _width + x];
+	}
+
+	const(short)[] pixels() const @property
+	{
+		return _pixels;
+	}
+
+	ubyte scalex() const @property
+	{
+		return _scalex;
+	}
+
+	ubyte scaley() const @property
+	{
+		return _scaley;
 	}
 }
 
@@ -51,14 +70,34 @@ class Picture
 	size_t width;
 	size_t height;
 
-	this(size_t width, size_t height)
+	this(size_t width, size_t height, ChromaFormat cf)
 	{
 		this.width = width;
 		this.height = height;
 
-		foreach(i; 0..3)
+		ubyte scalex, scaley;
+
+		final switch(cf)
 		{
-			planes[i] = new Plane(width, height);
+			case ChromaFormat.C444:
+				scalex = 0;
+				scaley = 0;
+				break;
+			case ChromaFormat.C422:
+				scalex = 0;
+				scaley = 1;
+				break;
+			case ChromaFormat.C420:
+				scalex = 1;
+				scaley = 1;
+				break;
+		}
+
+		planes[0] = new Plane(width, height, 0, 0);
+
+		foreach(i; 1..3)
+		{
+			planes[i] = new Plane(width >> scalex, height >> scaley, scalex, scaley);
 		}
 	}
 
@@ -102,7 +141,7 @@ class PictureBuilder
 	{
 		this.ph = ph;
 		this.dpb = dpb;
-		this.pic = new Picture(ph.si.width, ph.si.height);
+		this.pic = new Picture(ph.si.width, ph.si.height, ph.si.chroma_format);
 	}
 
 	void process(const ref MacroBlock mb)
@@ -226,48 +265,36 @@ class PictureBuilder
 		apply_mv(mba, PMV[r][s]);
 	}
 
-	private void apply_mv(int mba, const ref short[2] mv)
+	private void apply_mv(int mba, const ref short[2] mv0)
 	{
 		enforce(dpb.length > 0);
 		auto rf = dpb.back;
 
-		uint bx = (mba % pic.width_in_mb) * MACROBLOCK_SIZE;
-		uint by = (mba / pic.width_in_mb) * MACROBLOCK_SIZE;
+		uint bx0 = (mba % pic.width_in_mb) * MACROBLOCK_SIZE;
+		uint by0 = (mba / pic.width_in_mb) * MACROBLOCK_SIZE;
 		//writefln("mv[%s][%s][%d][%d]: %d %d", bx, by, r, s, mvx1, mvy1);
-
-		/*
-		short scalex, scaley;
-
-		final switch(ph.si.chroma_format)
-		{
-			case  ChromaFormat.C444:
-				scaley = 1;
-				scaley = 1;
-				break;
-			case ChromaFormat.C422:
-				scalex = 1;
-				scaley = 2;
-				break;
-			case ChromaFormat.C420:
-				scalex = 2;
-				scaley = 2;
-				break;
-		}
-
-		mvx1 /= scalex;
-		mvx2 /= scalex;
-		mvy1 /= scaley;
-		mvy2 /= scaley;
-		*/
-
-		short[2] mv1 = mv[] / 2;
-		short[2] mv2 = mv1[] + mv[] % 2;
 
 		foreach(cc; 0..3)
 		{
-			for(int y=by; y<by + 16; ++y)
+			auto plane = pic.planes[cc];
+
+			uint bx = bx0 >> plane.scalex;
+			uint by = by0 >> plane.scaley;
+
+			uint bw = 16 >> plane.scalex;
+			uint bh = 16 >> plane.scaley;
+
+			short[2] mv = mv0;
+
+			mv[0] >>= plane.scalex;
+			mv[1] >>= plane.scaley;
+
+			short[2] mv1 = mv[] / 2;
+			short[2] mv2 = mv1[] + mv[] % 2;
+
+			for(int y=by; y<by + bh; ++y)
 			{
-				for(int x=bx; x<bx + 16; ++x)
+				for(int x=bx; x<bx + bw; ++x)
 				{
 					const auto v = (rf.planes[cc][x + mv1[0], y + mv1[1]] + rf.planes[cc][x + mv2[0], y + mv2[1]]) / 2;
 					pic.planes[cc][x, y] += v;
@@ -283,6 +310,12 @@ class PictureBuilder
 		if(ph.picture_coding_type == PictureType.I)
 		{
 			base = 128;
+		}
+
+		if(cc > 0)
+		{
+			bx >>= plane.scalex;
+			by >>= plane.scaley;
 		}
 
 		if(cc == 0 || ph.si.chroma_format == ChromaFormat.C444)
@@ -306,10 +339,7 @@ class PictureBuilder
 				{
 					const auto v = cast(short) saturate!(int, 0, 255)(block[i * 8 + j] + base);
 
-					plane[bx + 2 * j    , by + 2 * i    ] += v;
-					plane[bx + 2 * j + 1, by + 2 * i    ] += v;
-					plane[bx + 2 * j    , by + 2 * i + 1] += v;
-					plane[bx + 2 * j + 1, by + 2 * i + 1] += v;
+					plane[bx + j, by + i] += v;
 				}
 			}
 		}
