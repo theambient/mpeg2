@@ -1,7 +1,7 @@
 
 module matrix;
 
-ubyte[64][2] SCAN_MATRIX =
+immutable ubyte[64][2] SCAN_MATRIX =
 [
 	[
 		/* Zig-Zag scan pattern  */
@@ -27,7 +27,7 @@ ubyte[64][2] SCAN_MATRIX =
 	]
 ];
 
-ubyte[64][4] DEFAULT_QUANT_MATRIX =
+immutable ubyte[64][4] DEFAULT_QUANT_MATRIX =
 [
 	[
 		08, 16, 19, 22, 26, 27, 29, 34,
@@ -72,13 +72,13 @@ ubyte[64][4] DEFAULT_QUANT_MATRIX =
 ];
 
 // Table 7-4
-ubyte[] INTRA_DC_MULT = [8, 4, 2, 1];
+immutable ubyte[] INTRA_DC_MULT = [8, 4, 2, 1];
 
 // Table 7-6
-ubyte[32][2] QUANTISER_SCALE_MATRIX =
+immutable ubyte[32][2] QUANTISER_SCALE_MATRIX =
 [
 	[0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62],
 	[1,2,3,4,5,6,7,8,10,12,14,16,18,20,22,24,28,32,36,40,44,48,52,56,64,72,80,88,96,104,112],
 ];
 
-ushort[4] DCT_PRED_DEFAULT = [128, 256, 512, 1024];
+immutable ushort[4] DCT_PRED_DEFAULT = [128, 256, 512, 1024];

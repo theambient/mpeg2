@@ -32,8 +32,8 @@ const W6 = 1108; /* 2048*sqrt(2)*cos(6*pi/16) */
 const W7 = 565;  /* 2048*sqrt(2)*cos(7*pi/16) */
 
 /* private data */
-private short[1024] iclip; /* clipping table */
-private short* iclp;
+private shared short[1024] iclip; /* clipping table */
+private shared short* iclp;
 
 /* row (horizontal) IDCT
  *
@@ -189,7 +189,7 @@ private void Initialize_Fast_IDCT()
 		iclp[i] = cast(short)((i<-256) ? -256 : ((i>255) ? 255 : i));
 }
 
-static this()
+shared static this()
 {
 	Initialize_Fast_IDCT();
 }

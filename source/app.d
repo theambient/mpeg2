@@ -36,7 +36,7 @@ class App
 		int cnt = 0;
 		for(Picture p = decoder.decode(); p !is null && cnt < options.pics_to_decode; p = decoder.decode())
 		{
-			writefln("decoded pic #%d", cnt);
+			//writefln("decoded pic #%d", cnt);
 			dump_picture(p);
 			++cnt;
 			if(cnt == options.pics_to_decode) break; // to avoid one extra Picture decoding

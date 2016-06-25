@@ -50,6 +50,11 @@ class Plane
 		return _pixels;
 	}
 
+	short[] pixels() @property
+	{
+		return _pixels;
+	}
+
 	ubyte scalex() const @property
 	{
 		return _scalex;
@@ -58,6 +63,16 @@ class Plane
 	ubyte scaley() const @property
 	{
 		return _scaley;
+	}
+
+	size_t width() const @property
+	{
+		return _width;
+	}
+
+	size_t height() const @property
+	{
+		return _height;
 	}
 }
 
@@ -292,13 +307,21 @@ class PictureBuilder
 			short[2] mv1 = mv[] / 2;
 			short[2] mv2 = mv1[] + mv[] % 2;
 
+			auto p = plane.pixels.ptr + by * plane.width + bx;
+			auto pp1 = rf.planes[cc].pixels.ptr + (by + mv1[1]) * plane.width + bx + mv1[0];
+			auto pp2 = rf.planes[cc].pixels.ptr + (by + mv2[1]) * plane.width + bx + mv2[0];
+
 			for(int y=by; y<by + bh; ++y)
 			{
-				for(int x=bx; x<bx + bw; ++x)
+				for(int x=bx; x<bx + bw; ++x, ++p, ++pp1, ++pp2)
 				{
-					const auto v = (rf.planes[cc][x + mv1[0], y + mv1[1]] + rf.planes[cc][x + mv2[0], y + mv2[1]]) / 2;
-					pic.planes[cc][x, y] += v;
+					const auto v = (*pp1 + *pp2) / 2;
+					*p += v;
 				}
+
+				p   += plane.width - bw;
+				pp1 += plane.width - bw;
+				pp2 += plane.width - bw;
 			}
 		}
 	}
@@ -908,7 +931,7 @@ class Decoder
 		bs.read_u(5);
 
 		enforce(bs.is_byte_aligned);
-		si.dump();
+		//si.dump();
 	}
 
 	private void _parse_extension(ubyte start_code)
@@ -921,8 +944,8 @@ class Decoder
 	private void _parse_picture_extension()
 	{
 		ph.parse_extension(bs);
-		writefln("================== pic #%03d =======================", ph.temporal_reference);
-		ph.dump();
+		//writefln("================== pic #%03d =======================", ph.temporal_reference);
+		//ph.dump();
 		//expected_extension = ExpectedExtension.ExtensionAndUserData;
 		//extension_i = 2;
 	}
