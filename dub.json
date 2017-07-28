@@ -3,6 +3,7 @@
 	"description": "mpeg2 decoder",
 	"targetType": "executable",
 	"copyright": "Copyright © 2015, Ruslan Mullakhmetov",
+	"license": "MIT",
 	"authors": [
 		"Ruslan Mullakhmetov"
 	],
